@@ -1,0 +1,19 @@
+# Terraform state e plan
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# Variáveis sensíveis
+*.tfvars
+!*.tfvars.example
+
+# Diretório de provider/plugin
+.terraform/
+.terraform.lock.hcl
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
