@@ -35,6 +35,10 @@ resource "helm_release" "flux_sync" {
       name  = "kustomization.spec.decryption.secretRef.name"
       value = "sops-age"
     },
+    {
+      name  = "gitRepository.spec.secretRef.name"
+      value = "flux-git-auth"
+    },
   ]
 
   depends_on = [helm_release.flux]

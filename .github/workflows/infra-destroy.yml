@@ -86,6 +86,7 @@ jobs:
             --region "${{ secrets.OCI_REGION }}" \
             --token-version 2.0.0
           kubectl delete ingress --all -A --ignore-not-found
+          kubectl delete svc -n shared-services -l app.kubernetes.io/instance=ingress-nginx --ignore-not-found
           sleep 60
 
       - name: Terraform destroy

@@ -541,11 +541,19 @@ resource "helm_release" "flux_sync" {
       name  = "kustomization.spec.decryption.secretRef.name"
       value = "sops-age"
     },
+    {
+      name  = "gitRepository.spec.secretRef.name"
+      value = "flux-git-auth"
+    },
   ]
 
   depends_on = [helm_release.flux]
 }
 ```
+
+O repositório é **privado**, então o `GitRepository` precisa de credenciais
+(`gitRepository.spec.secretRef.name = flux-git-auth`) — secret criado
+manualmente no cluster (ver Task 15), mesmo padrão do `sops-age`.
 
 Note: `set` no `helm_release` é uma **lista de objetos** (`set = [{...}, ...]`) no provider `hashicorp/helm` v3, não blocos repetidos `set {}` (isso mudou do v2 pro v3 — confirmado rodando `terraform validate` contra o provider v3.2.0 real).
 
@@ -788,6 +796,7 @@ spec:
   values:
     provider:
       name: cloudflare
+    policy: sync
     env:
       - name: CF_API_TOKEN
         valueFrom:
@@ -798,6 +807,10 @@ spec:
       - oneshift.com.br
     txtOwnerId: oneshift-prd
 ```
+
+`policy: sync` é obrigatório — o default do chart é `upsert-only` (só
+cria/atualiza registros DNS, nunca deleta), o que quebraria a limpeza de DNS
+na exclusão de um Ingress (ver seção "Limpeza de DNS no destroy" do design).
 
 - [ ] **Step 3: Gerar o secret.sops.yaml (placeholder, sobrescrito na primeira apply real)**
 
@@ -1132,6 +1145,7 @@ jobs:
             --region "${{ secrets.OCI_REGION }}" \
             --token-version 2.0.0
           kubectl delete ingress --all -A --ignore-not-found
+          kubectl delete svc -n shared-services -l app.kubernetes.io/instance=ingress-nginx --ignore-not-found
           sleep 60
 
       - name: Terraform destroy
@@ -1146,6 +1160,11 @@ jobs:
           TF_VAR_cloudflare_account_api_token: ${{ secrets.CLOUDFLARE_ACCOUNT_API_TOKEN }}
           TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
 ```
+
+O `kubectl delete svc` do ingress-nginx é necessário porque o Service
+`type: LoadBalancer` provisiona um Load Balancer OCI que não é gerenciado
+pelo Terraform — sem essa limpeza, ele pode sobreviver ao `terraform
+destroy` e bloquear a exclusão da VCN/subnets.
 
 - [ ] **Step 2: Validar sintaxe YAML**
 
@@ -1266,6 +1285,27 @@ permissão mínima de **"Account API Tokens" → Edit** (é o token usado pelo
 Terraform pra criar o token específico do external-dns, escopado só a DNS).
 Guarde o valor no secret `CLOUDFLARE_ACCOUNT_API_TOKEN` do GitHub.
 
+### 4. Credencial de git para o Flux (repositório privado)
+
+O repositório `Oneshift-Organization/ost-iac.terraform` é **privado**, então
+o `GitRepository` do Flux precisa de credenciais pra clonar. Gere um GitHub
+Personal Access Token (fine-grained, permissão de leitura em "Contents" só
+pra este repositório; um PAT clássico com escopo `repo` também funciona se o
+fine-grained não estiver disponível). Depois que o cluster existir, crie o
+secret que o `flux2-sync` referencia (`gitRepository.spec.secretRef.name =
+flux-git-auth`):
+
+```bash
+kubectl create secret generic flux-git-auth \
+  --namespace flux-system \
+  --from-literal=username=<qualquer-valor-ex-git> \
+  --from-literal=password=<o-token-gerado>
+```
+
+Mesma categoria de bootstrap manual do secret `sops-age`: ambos vivem em
+`flux-system` e são pré-requisitos pra o `GitRepository`/`Kustomization`
+funcionarem.
+
 ## GitHub Secrets necessários
 
 | Secret | Descrição |
@@ -1298,8 +1338,10 @@ terraform plan
   apply automático, e re-criptografa `fluxcd/shared-services/external-dns/secret.sops.yaml`
   se o token da Cloudflare mudou.
 - **`infra-destroy.yml`** — manual (`workflow_dispatch`), exige digitar
-  `oneshift` para confirmar. Limpa os Ingress do cluster antes do destroy
-  (dá tempo do external-dns remover os registros DNS).
+  `oneshift` para confirmar. Limpa os Ingress e o Service do ingress-nginx
+  do cluster antes do destroy (dá tempo do external-dns remover os
+  registros DNS e da OCI desprovisionar o Load Balancer associado ao
+  Service, que não é gerenciado pelo Terraform).
 ```
 
 - [ ] **Step 3: Validar que os arquivos existem e são markdown/hcl válidos**

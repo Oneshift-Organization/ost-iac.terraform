@@ -182,6 +182,13 @@ ovo-e-galinha de gerenciar via Terraform/Flux a própria chave que eles
 precisam pra decriptar segredos. A chave pública fica em `.sops.yaml` na
 raiz do repo.
 
+O repositório `Oneshift-Organization/ost-iac.terraform` é **privado**, então
+o `GitRepository` do Flux também precisa de credenciais de git — configurado
+via `gitRepository.spec.secretRef.name = flux-git-auth` no `flux2-sync`. O
+secret `flux-git-auth` (chaves `username`/`password`, um GitHub PAT) é
+criado manualmente no cluster, mesmo padrão de bootstrap do `sops-age`
+(documentado no README).
+
 ## DNS (Cloudflare) + external-dns
 
 Problema a resolver: o IP do Load Balancer do ingress só existe depois que o
@@ -190,7 +197,9 @@ diretamente no Terraform sem dependência circular ou um apply em duas fases.
 
 Solução: **external-dns** rodando no cluster (deployado via FluxCD), que cria
 e atualiza os registros DNS automaticamente a partir das anotações dos
-Ingress/Services.
+Ingress/Services. O `HelmRelease` seta `policy: sync` explicitamente — o
+default do chart é `upsert-only` (só cria/atualiza, nunca deleta), o que
+quebraria a limpeza de DNS na exclusão de um Ingress.
 
 Fluxo, nessa ordem:
 1. `03-cloudflare-token.tf` cria o `cloudflare_api_token`, escopado pra
@@ -243,8 +252,14 @@ dispara o pipeline.
 **`infra-destroy.yml`** (manual, `workflow_dispatch`, exige digitar o nome do
 compartment `oneshift` como confirmação):
 1. Configura kubeconfig do OKE.
-2. `kubectl delete ingress --all -A` e aguarda alguns segundos — dá tempo do
-   external-dns reconciliar e limpar os registros DNS antes do cluster sumir.
+2. `kubectl delete ingress --all -A` e, em seguida, `kubectl delete svc` do
+   ingress-nginx (namespace `shared-services`, seletor
+   `app.kubernetes.io/instance=ingress-nginx`) — o Service `LoadBalancer`
+   provisiona um Load Balancer OCI que não é gerenciado pelo Terraform, e
+   sobreviveria ao `terraform destroy`, bloqueando a exclusão da VCN.
+   Aguarda alguns segundos — dá tempo do external-dns reconciliar e limpar
+   os registros DNS e da OCI desprovisionar o Load Balancer antes do
+   cluster sumir.
 3. `terraform destroy` (compartment, OKE e o token da Cloudflare, tudo no
    mesmo root module).
 

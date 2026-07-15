@@ -66,6 +66,27 @@ permissão mínima de **"Account API Tokens" → Edit** (é o token usado pelo
 Terraform pra criar o token específico do external-dns, escopado só a DNS).
 Guarde o valor no secret `CLOUDFLARE_ACCOUNT_API_TOKEN` do GitHub.
 
+### 4. Credencial de git para o Flux (repositório privado)
+
+O repositório `Oneshift-Organization/ost-iac.terraform` é **privado**, então o
+`GitRepository` do Flux precisa de credenciais pra clonar. Gere um GitHub
+Personal Access Token (fine-grained, permissão de leitura em "Contents" só
+pra este repositório; um PAT clássico com escopo `repo` também funciona se o
+fine-grained não estiver disponível). Depois que o cluster existir, crie o
+secret que o `flux2-sync` referencia (`gitRepository.spec.secretRef.name =
+flux-git-auth`):
+
+```bash
+kubectl create secret generic flux-git-auth \
+  --namespace flux-system \
+  --from-literal=username=<qualquer-valor-ex-git> \
+  --from-literal=password=<o-token-gerado>
+```
+
+Mesma categoria de bootstrap manual do secret `sops-age`: ambos vivem em
+`flux-system` e são pré-requisitos pra o `GitRepository`/`Kustomization`
+funcionarem.
+
 ## GitHub Secrets necessários
 
 | Secret | Descrição |
@@ -98,5 +119,7 @@ terraform plan
   apply automático, e re-criptografa `fluxcd/shared-services/external-dns/secret.sops.yaml`
   se o token da Cloudflare mudou.
 - **`infra-destroy.yml`** — manual (`workflow_dispatch`), exige digitar
-  `oneshift` para confirmar. Limpa os Ingress do cluster antes do destroy
-  (dá tempo do external-dns remover os registros DNS).
+  `oneshift` para confirmar. Limpa os Ingress e o Service do ingress-nginx
+  do cluster antes do destroy (dá tempo do external-dns remover os
+  registros DNS e da OCI desprovisionar o Load Balancer associado ao
+  Service, que não é gerenciado pelo Terraform).
