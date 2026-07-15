@@ -110,7 +110,8 @@ creation_rules:
 
 Run:
 ```bash
-cat > /tmp/sops-check.yaml <<'EOF'
+mkdir -p fluxcd
+cat > fluxcd/check.sops.yaml <<'EOF'
 apiVersion: v1
 kind: Secret
 metadata:
@@ -119,12 +120,12 @@ metadata:
 stringData:
   foo: bar
 EOF
-cd /home/luandi/projects/pessoal/oneshift/ost-iac.terraform
-mkdir -p fluxcd
-sops --encrypt /tmp/sops-check.yaml > fluxcd/check.sops.yaml
+sops --encrypt --in-place fluxcd/check.sops.yaml
 cat fluxcd/check.sops.yaml
 ```
 Expected: saída é um YAML válido, com `metadata.name: check` em texto plano e `stringData.foo` substituído por um valor `ENC[AES256_GCM,...]`, mais um bloco `sops:` no fim do arquivo com `age:` preenchido.
+
+Note: o `sops` casa as `creation_rules` de `.sops.yaml` pelo **caminho do arquivo de entrada**, não pelo caminho de saída de um redirect `>`. Por isso o arquivo tem que ser escrito direto no caminho final (que bate com o `path_regex: fluxcd/.*\.sops\.ya?ml$`) e criptografado `--in-place` — `sops --encrypt /tmp/algo.yaml > fluxcd/algo.sops.yaml` falha com "no matching creation rules found", porque o `/tmp/...` não bate com o regex.
 
 - [ ] **Step 4: Limpar o arquivo de teste e commitar só o necessário**
 
@@ -177,7 +178,7 @@ variable "private_key" {
 variable "region" {
   description = "Região da OCI onde os recursos são criados"
   type        = string
-  default     = "sa-saopaulo-1"
+  default     = "us-ashburn-1"
 }
 
 variable "home_region" {
@@ -256,7 +257,7 @@ private_key  = <<EOT
 ...
 -----END PRIVATE KEY-----
 EOT
-region      = "sa-saopaulo-1"
+region      = "us-ashburn-1"
 home_region = "us-ashburn-1"
 
 cloudflare_account_api_token = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
@@ -519,34 +520,42 @@ resource "helm_release" "flux_sync" {
   version    = "~> 1.15"
   namespace  = "flux-system"
 
-  set {
-    name  = "gitRepository.spec.url"
-    value = "https://github.com/Oneshift-Organization/ost-iac.terraform"
-  }
-
-  set {
-    name  = "gitRepository.spec.ref.branch"
-    value = "main"
-  }
-
-  set {
-    name  = "kustomization.spec.path"
-    value = "./fluxcd"
-  }
-
-  set {
-    name  = "kustomization.spec.decryption.provider"
-    value = "sops"
-  }
-
-  set {
-    name  = "kustomization.spec.decryption.secretRef.name"
-    value = "sops-age"
-  }
+  set = [
+    {
+      name  = "gitRepository.spec.url"
+      value = "https://github.com/Oneshift-Organization/ost-iac.terraform"
+    },
+    {
+      name  = "gitRepository.spec.ref.branch"
+      value = "main"
+    },
+    {
+      name  = "kustomization.spec.path"
+      value = "./fluxcd"
+    },
+    {
+      name  = "kustomization.spec.decryption.provider"
+      value = "sops"
+    },
+    {
+      name  = "kustomization.spec.decryption.secretRef.name"
+      value = "sops-age"
+    },
+    {
+      name  = "gitRepository.spec.secretRef.name"
+      value = "flux-git-auth"
+    },
+  ]
 
   depends_on = [helm_release.flux]
 }
 ```
+
+O repositório é **privado**, então o `GitRepository` precisa de credenciais
+(`gitRepository.spec.secretRef.name = flux-git-auth`) — secret criado
+manualmente no cluster (ver Task 15), mesmo padrão do `sops-age`.
+
+Note: `set` no `helm_release` é uma **lista de objetos** (`set = [{...}, ...]`) no provider `hashicorp/helm` v3, não blocos repetidos `set {}` (isso mudou do v2 pro v3 — confirmado rodando `terraform validate` contra o provider v3.2.0 real).
 
 - [ ] **Step 3: Validar**
 
@@ -787,6 +796,7 @@ spec:
   values:
     provider:
       name: cloudflare
+    policy: sync
     env:
       - name: CF_API_TOKEN
         valueFrom:
@@ -798,12 +808,15 @@ spec:
     txtOwnerId: oneshift-prd
 ```
 
+`policy: sync` é obrigatório — o default do chart é `upsert-only` (só
+cria/atualiza registros DNS, nunca deleta), o que quebraria a limpeza de DNS
+na exclusão de um Ingress (ver seção "Limpeza de DNS no destroy" do design).
+
 - [ ] **Step 3: Gerar o secret.sops.yaml (placeholder, sobrescrito na primeira apply real)**
 
 Run:
 ```bash
-cd /home/luandi/projects/pessoal/oneshift/ost-iac.terraform
-cat > /tmp/cloudflare-secret.yaml <<'EOF'
+cat > fluxcd/shared-services/external-dns/secret.sops.yaml <<'EOF'
 apiVersion: v1
 kind: Secret
 metadata:
@@ -812,11 +825,12 @@ metadata:
 stringData:
   apiToken: changeme-placeholder-token
 EOF
-sops --encrypt /tmp/cloudflare-secret.yaml > fluxcd/shared-services/external-dns/secret.sops.yaml
-rm /tmp/cloudflare-secret.yaml
+sops --encrypt --in-place fluxcd/shared-services/external-dns/secret.sops.yaml
 cat fluxcd/shared-services/external-dns/secret.sops.yaml
 ```
 Expected: YAML com `metadata` em texto plano e `stringData.apiToken` criptografado (`ENC[AES256_GCM,...]`), mais o bloco `sops:` no final.
+
+Note: escreva o arquivo já no caminho final (que bate com o `path_regex` do `.sops.yaml`) e criptografe `--in-place` — `sops` casa as `creation_rules` pelo caminho de entrada, então `sops --encrypt /tmp/algo.yaml > caminho/final.sops.yaml` falha com "no matching creation rules found".
 
 - [ ] **Step 4: Criar fluxcd/shared-services/external-dns/kustomization.yaml**
 
@@ -991,7 +1005,7 @@ jobs:
       - name: Encrypt cloudflare token for external-dns
         run: |
           TOKEN=$(terraform output -raw cloudflare_api_token)
-          cat > /tmp/cloudflare-secret.yaml <<EOF
+          cat > ../fluxcd/shared-services/external-dns/secret.sops.yaml <<EOF
           apiVersion: v1
           kind: Secret
           metadata:
@@ -1000,7 +1014,7 @@ jobs:
           stringData:
             apiToken: ${TOKEN}
           EOF
-          sops --encrypt /tmp/cloudflare-secret.yaml > ../fluxcd/shared-services/external-dns/secret.sops.yaml
+          sops --encrypt --in-place ../fluxcd/shared-services/external-dns/secret.sops.yaml
 
       - name: Commit updated secret if changed
         run: |
@@ -1131,6 +1145,7 @@ jobs:
             --region "${{ secrets.OCI_REGION }}" \
             --token-version 2.0.0
           kubectl delete ingress --all -A --ignore-not-found
+          kubectl delete svc -n shared-services -l app.kubernetes.io/instance=ingress-nginx --ignore-not-found
           sleep 60
 
       - name: Terraform destroy
@@ -1145,6 +1160,11 @@ jobs:
           TF_VAR_cloudflare_account_api_token: ${{ secrets.CLOUDFLARE_ACCOUNT_API_TOKEN }}
           TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
 ```
+
+O `kubectl delete svc` do ingress-nginx é necessário porque o Service
+`type: LoadBalancer` provisiona um Load Balancer OCI que não é gerenciado
+pelo Terraform — sem essa limpeza, ele pode sobreviver ao `terraform
+destroy` e bloquear a exclusão da VCN/subnets.
 
 - [ ] **Step 2: Validar sintaxe YAML**
 
@@ -1178,10 +1198,10 @@ git commit -m "ci: add manual destroy pipeline with confirmation and dns cleanup
 ```hcl
 bucket = "oneshift-tfstate-prd"
 key    = "oneshift-prd/terraform.tfstate"
-region = "sa-saopaulo-1"
+region = "us-ashburn-1"
 
 endpoints = {
-  s3 = "https://<object-storage-namespace>.compat.objectstorage.sa-saopaulo-1.oraclecloud.com"
+  s3 = "https://<object-storage-namespace>.compat.objectstorage.us-ashburn-1.oraclecloud.com"
 }
 
 access_key = "<customer-secret-key-access-key>"
@@ -1225,7 +1245,7 @@ ovo-e-galinha (a infra que os gerenciaria ainda não existe).
 oci os bucket create \
   --compartment-id <ocid-do-compartment-raiz-ou-tenancy> \
   --name oneshift-tfstate-prd \
-  --region sa-saopaulo-1
+  --region us-ashburn-1
 ```
 
 Crie uma **Customer Secret Key** pro usuário que vai rodar o Terraform
@@ -1265,6 +1285,27 @@ permissão mínima de **"Account API Tokens" → Edit** (é o token usado pelo
 Terraform pra criar o token específico do external-dns, escopado só a DNS).
 Guarde o valor no secret `CLOUDFLARE_ACCOUNT_API_TOKEN` do GitHub.
 
+### 4. Credencial de git para o Flux (repositório privado)
+
+O repositório `Oneshift-Organization/ost-iac.terraform` é **privado**, então
+o `GitRepository` do Flux precisa de credenciais pra clonar. Gere um GitHub
+Personal Access Token (fine-grained, permissão de leitura em "Contents" só
+pra este repositório; um PAT clássico com escopo `repo` também funciona se o
+fine-grained não estiver disponível). Depois que o cluster existir, crie o
+secret que o `flux2-sync` referencia (`gitRepository.spec.secretRef.name =
+flux-git-auth`):
+
+```bash
+kubectl create secret generic flux-git-auth \
+  --namespace flux-system \
+  --from-literal=username=<qualquer-valor-ex-git> \
+  --from-literal=password=<o-token-gerado>
+```
+
+Mesma categoria de bootstrap manual do secret `sops-age`: ambos vivem em
+`flux-system` e são pré-requisitos pra o `GitRepository`/`Kustomization`
+funcionarem.
+
 ## GitHub Secrets necessários
 
 | Secret | Descrição |
@@ -1273,7 +1314,7 @@ Guarde o valor no secret `CLOUDFLARE_ACCOUNT_API_TOKEN` do GitHub.
 | `OCI_USER_OCID` | OCID do usuário de API key |
 | `OCI_FINGERPRINT` | Fingerprint da chave de API |
 | `OCI_PRIVATE_KEY` | Conteúdo da chave privada PEM |
-| `OCI_REGION` | Região da OCI (ex: `sa-saopaulo-1`) |
+| `OCI_REGION` | Região da OCI (ex: `us-ashburn-1`) |
 | `OCI_HOME_REGION` | Home region da tenancy |
 | `CLOUDFLARE_ACCOUNT_API_TOKEN` | Token de conta Cloudflare (bootstrap manual acima) |
 | `CLOUDFLARE_ZONE_ID` | Zone ID do domínio da oneshift |
@@ -1297,8 +1338,10 @@ terraform plan
   apply automático, e re-criptografa `fluxcd/shared-services/external-dns/secret.sops.yaml`
   se o token da Cloudflare mudou.
 - **`infra-destroy.yml`** — manual (`workflow_dispatch`), exige digitar
-  `oneshift` para confirmar. Limpa os Ingress do cluster antes do destroy
-  (dá tempo do external-dns remover os registros DNS).
+  `oneshift` para confirmar. Limpa os Ingress e o Service do ingress-nginx
+  do cluster antes do destroy (dá tempo do external-dns remover os
+  registros DNS e da OCI desprovisionar o Load Balancer associado ao
+  Service, que não é gerenciado pelo Terraform).
 ```
 
 - [ ] **Step 3: Validar que os arquivos existem e são markdown/hcl válidos**

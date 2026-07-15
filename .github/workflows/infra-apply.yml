@@ -1,0 +1,116 @@
+name: infra-apply
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+
+permissions:
+  contents: write
+
+env:
+  TF_VERSION: "1.5.7"
+
+jobs:
+  plan-and-apply:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    env:
+      OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+      OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
+      OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Install OCI CLI
+        uses: oracle-actions/run-oci-cli-command@368cc7991534d1b8074846d10e1d84ac4c0d1a28 # v1.3.2
+        with:
+          command: "iam region list"
+
+      - name: Install sops
+        run: |
+          curl -Lo /usr/local/bin/sops https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.amd64
+          sudo chmod +x /usr/local/bin/sops
+
+      - name: Terraform init
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          TF_STATE_S3_ENDPOINT: ${{ secrets.TF_STATE_S3_ENDPOINT }}
+          TF_STATE_ACCESS_KEY: ${{ secrets.TF_STATE_ACCESS_KEY }}
+          TF_STATE_SECRET_KEY: ${{ secrets.TF_STATE_SECRET_KEY }}
+        run: |
+          terraform init \
+            -backend-config="bucket=$TF_STATE_BUCKET" \
+            -backend-config="key=oneshift-prd/terraform.tfstate" \
+            -backend-config="region=$OCI_REGION" \
+            -backend-config="endpoints={s3=\"$TF_STATE_S3_ENDPOINT\"}" \
+            -backend-config="access_key=$TF_STATE_ACCESS_KEY" \
+            -backend-config="secret_key=$TF_STATE_SECRET_KEY" \
+            -backend-config="skip_region_validation=true" \
+            -backend-config="skip_credentials_validation=true" \
+            -backend-config="skip_requesting_account_id=true" \
+            -backend-config="skip_s3_checksum=true" \
+            -backend-config="use_path_style=true"
+
+      - name: Terraform plan
+        run: terraform plan -out=tfplan
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key: ${{ secrets.OCI_PRIVATE_KEY }}
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_home_region: ${{ secrets.OCI_HOME_REGION }}
+          TF_VAR_compartment_id: ${{ secrets.OCI_COMPARTMENT_ID }}
+          TF_VAR_cloudflare_account_api_token: ${{ secrets.CLOUDFLARE_ACCOUNT_API_TOKEN }}
+          TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          TF_VAR_sops_age_private_key: ${{ secrets.SOPS_AGE_PRIVATE_KEY }}
+          TF_VAR_flux_git_username: ${{ secrets.FLUX_GIT_USERNAME }}
+          TF_VAR_flux_git_token: ${{ secrets.FLUX_GIT_TOKEN }}
+
+      - name: Terraform apply
+        run: terraform apply -auto-approve tfplan
+
+      - name: Encrypt cloudflare token for external-dns
+        id: token
+        run: |
+          TOKEN=$(terraform output -raw cloudflare_api_token)
+          HASH_FILE=../fluxcd/shared-services/external-dns/cloudflare_api_token.sha256
+          NEW_HASH=$(printf '%s' "$TOKEN" | sha256sum | cut -d' ' -f1)
+          OLD_HASH=$(cat "$HASH_FILE" 2>/dev/null || echo "")
+          if [ "$NEW_HASH" = "$OLD_HASH" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "$NEW_HASH" > "$HASH_FILE"
+          cat > ../fluxcd/shared-services/external-dns/secret.sops.yaml <<EOF
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: cloudflare-api-token
+            namespace: shared-services
+          stringData:
+            apiToken: ${TOKEN}
+          EOF
+          sops --encrypt --in-place ../fluxcd/shared-services/external-dns/secret.sops.yaml
+
+      - name: Commit updated secret if changed
+        if: steps.token.outputs.changed == 'true'
+        run: |
+          cd ..
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add fluxcd/shared-services/external-dns/secret.sops.yaml fluxcd/shared-services/external-dns/cloudflare_api_token.sha256
+          git commit -m "chore: rotate cloudflare token for external-dns"
+          git push
