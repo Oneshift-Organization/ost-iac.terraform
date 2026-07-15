@@ -44,6 +44,11 @@ provider "cloudflare" {
   api_token = var.cloudflare_account_api_token
 }
 
+# host/cluster_ca_certificate here read a computed attribute of module.oke.
+# Terraform doesn't guarantee provider config is evaluated after the
+# resource it depends on within the same apply, so module.oke must already
+# be applied (and its state refreshed) before this provider is configured —
+# see infra-apply.yml's cluster-first apply step.
 provider "helm" {
   kubernetes = {
     host                   = module.oke.cluster_endpoints.public_endpoint
