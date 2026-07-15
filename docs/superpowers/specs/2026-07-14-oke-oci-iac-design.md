@@ -19,13 +19,12 @@ Ambiente único neste momento: **prd** (produção). Projeto: **oneshift**.
 ## Estrutura do repositório
 
 ```
-terraform/                 # root único: compartment + rede + OKE + token
-                            # da Cloudflare + bootstrap do FluxCD
-  00-provider.tf            # oci + helm + cloudflare (sem provider kubernetes)
+terraform/                 # root único: compartment + rede + OKE + bootstrap
+                            # do FluxCD
+  00-provider.tf            # só oci + helm
   01-compartment.tf
   02-oke.tf
-  03-cloudflare-token.tf     # só o recurso cloud (cloudflare_api_token)
-  04-fluxcd.tf
+  03-fluxcd.tf
 fluxcd/
   kustomization.yaml        # raiz: agrega shared-services/ e apps/
   shared-services/           # infra compartilhada do cluster (namespace shared-services)
@@ -47,19 +46,19 @@ fluxcd/
   workflows/
     infra.yml               # plan + apply automático em push na main
     infra-destroy.yml       # destroy manual, com confirmação
-README.md                   # bootstrap manual: bucket de state + chave age (secret sops-age)
+README.md                   # bootstrap manual: bucket de state, chave age (secret
+                             # sops-age) e token da Cloudflare
 ```
 
-Root único de Terraform (não dois separados por provider) pela mesma razão
-de antes: menos complexidade de referência cruzada entre `oci` e
-`cloudflare`. Mas agora o Terraform **não** toca em objetos do cluster —
-`03-cloudflare-token.tf` cria só o recurso `cloudflare_api_token` (nível de
-conta Cloudflare), e a entrega do valor pro cluster é feita via GitOps +
-SOPS, não via provider `kubernetes`. Isso elimina esse provider do
-Terraform: o `helm_release` do Flux usa o **provider `helm`** configurado
-com um bloco `kubernetes { host = module.oke..., exec {...} }` (mesmo
-padrão do repositório de referência) — a conexão fica na config do
-provider, não precisa de um provider `kubernetes` à parte.
+Terraform **não tem provider `cloudflare`** — ele nunca toca em nada da
+Cloudflare. O token de API usado pelo external-dns é criado **manualmente
+no dashboard da Cloudflare**, uma única vez (mesmo padrão de bootstrap
+manual do bucket de state e da chave age), e entra direto criptografado no
+`secret.sops.yaml`. Terraform também não tem provider `kubernetes`: o
+`helm_release` do Flux usa o **provider `helm`** configurado com um bloco
+`kubernetes { host = module.oke..., exec {...} }` (mesmo padrão do
+repositório de referência) — a conexão fica na config do provider. Sobra só
+`oci` + `helm` em `00-provider.tf`.
 
 Não há overlays por cloud (só existe OCI) — este repositório cobre
 infraestrutura, o bootstrap do GitOps e os manifests que o Flux reconcilia
@@ -142,7 +141,7 @@ Manager.
 
 ## FluxCD bootstrap
 
-Mesmo padrão do repositório de referência: em `04-fluxcd.tf`,
+Mesmo padrão do repositório de referência: em `03-fluxcd.tf`,
 `helm_release` do `flux2` + `flux2-sync`, apontando para o path `./fluxcd`
 (raiz) deste mesmo repositório (branch `main`) — um único Flux
 `Kustomization` reconciliando a raiz, sem múltiplos CRs pra gerenciar.
@@ -187,11 +186,12 @@ Solução: **external-dns** rodando no cluster (deployado via FluxCD), que cria
 e atualiza os registros DNS automaticamente a partir das anotações dos
 Ingress/Services.
 
-- `03-cloudflare-token.tf` cria só o `cloudflare_api_token`, com permissão
-  restrita de editar DNS na zona — um recurso de conta Cloudflare, nada de
-  objeto do cluster. Terraform não precisa mais do provider `kubernetes`.
-- O valor do token é criptografado com SOPS (manualmente, a partir do
-  `terraform output`, ou na rotação do token) e commitado em
+- O token de API da Cloudflare (permissão restrita de editar DNS na zona) é
+  criado **manualmente no dashboard da Cloudflare**, uma única vez —
+  Terraform não participa disso, não existe `cloudflare_api_token` nem
+  provider `cloudflare` no Terraform. Passo documentado no README, junto dos
+  outros bootstraps manuais (bucket de state, chave age).
+- O valor do token é criptografado com SOPS e commitado em
   `fluxcd/shared-services/external-dns/secret.sops.yaml`. O Flux decripta
   esse arquivo (chave `sops-age`, ver seção de FluxCD bootstrap) e aplica o
   secret no cluster antes de instalar o `external-dns`.
@@ -199,8 +199,9 @@ Ingress/Services.
   consome esse secret, e o `ingress-nginx` — ambos no namespace
   `shared-services`.
 - **Zona Cloudflare assumida como já existente** (domínio já apontado pra
-  lá), referenciada via `data "cloudflare_zone"` — o Terraform não cria a
-  zona.
+  lá) — o `external-dns` é configurado (via `helmrelease.yaml`) com o nome
+  do domínio; a zona em si não é gerenciada por este repositório em nenhuma
+  camada.
 
 ### Limpeza de DNS no destroy
 
@@ -210,10 +211,10 @@ direto, o cluster (e o pod do external-dns) some junto com tudo, sem chance
 de fazer essa limpeza sozinho. Por isso o pipeline de destroy tem um passo
 extra explícito antes do `terraform destroy` (ver seção de pipelines).
 
-Efeito colateral aceito: depois de um `terraform destroy`, o token dentro de
-`secret.sops.yaml` fica órfão (aponta pra um `cloudflare_api_token` que não
-existe mais). Não quebra nada — só é irrelevante até a infra subir de novo,
-quando o secret é re-criptografado com o token novo.
+Como o token não é gerenciado pelo Terraform, um `terraform destroy` não o
+afeta — ele continua válido pro próximo `terraform apply`, sem precisar
+recriar nem re-criptografar nada. Só os registros DNS (limpos no passo 2 do
+destroy) e o cluster em si somem.
 
 ## Pipelines (GitHub Actions)
 
@@ -229,8 +230,7 @@ compartment `oneshift` como confirmação):
 1. Configura kubeconfig do OKE.
 2. `kubectl delete ingress --all -A` e aguarda alguns segundos — dá tempo do
    external-dns reconciliar e limpar os registros DNS antes do cluster sumir.
-3. `terraform destroy` (compartment, OKE e o token da Cloudflare, tudo no
-   mesmo root module).
+3. `terraform destroy` (compartment e OKE).
 
 ## Fora de escopo agora (YAGNI)
 
