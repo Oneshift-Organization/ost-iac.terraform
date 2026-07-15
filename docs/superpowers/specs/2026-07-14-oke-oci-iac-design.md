@@ -28,8 +28,13 @@ terraform/                 # root único: compartment + rede + OKE + token
   03-cloudflare-token.tf
   04-fluxcd.tf
 fluxcd/
-  apps/
-    base/                  # ingress-nginx + external-dns (HelmRelease/Kustomization)
+  kustomization.yaml       # raiz: agrega shared-services/ e apps/
+  shared-services/          # infra compartilhada do cluster (namespace shared-services)
+    kustomization.yaml
+    ingress-nginx.yaml      # HelmRelease
+    external-dns.yaml       # HelmRelease
+  apps/                      # apps da oneshift (vazio por enquanto, populado depois)
+    kustomization.yaml
 .github/
   workflows/
     infra.yml              # plan + apply automático em push na main
@@ -45,10 +50,11 @@ desnecessária para um único recurso. Com um root só, os providers `oci`,
 `cloudflare`, `kubernetes` e `helm` convivem no mesmo `00-provider.tf` e o
 dado flui direto, sem cruzar states.
 
-Não há overlays por cloud (só existe OCI) nem pastas de aplicação — este
-repositório cobre apenas infraestrutura e o bootstrap do GitOps. Apps que
-rodarem no cluster vivem em outro repositório e o FluxCD aponta pra eles
-depois.
+Não há overlays por cloud (só existe OCI) — este repositório cobre
+infraestrutura, o bootstrap do GitOps e os manifests que o Flux reconcilia
+no cluster (`fluxcd/`). O path `fluxcd/apps/` é o destino das aplicações da
+oneshift; por enquanto fica vazio (só o `kustomization.yaml`), e passa a ser
+populado quando o deploy dessas apps via GitOps começar.
 
 ## Nomenclatura
 
@@ -113,8 +119,21 @@ Manager.
 ## FluxCD bootstrap
 
 Mesmo padrão do repositório de referência: em `04-fluxcd.tf`,
-`helm_release` do `flux2` + `flux2-sync`, apontando para o path
-`./fluxcd/apps/base` deste mesmo repositório (branch `main`).
+`helm_release` do `flux2` + `flux2-sync`, apontando para o path `./fluxcd`
+(raiz) deste mesmo repositório (branch `main`) — um único Flux
+`Kustomization` reconciliando a raiz, sem múltiplos CRs pra gerenciar.
+
+Dentro de `fluxcd/`, um `kustomization.yaml` raiz agrega dois paths por
+`resources:`:
+- **`shared-services/`** — infraestrutura compartilhada do cluster:
+  `ingress-nginx` e `external-dns`, ambos no namespace `shared-services`.
+  A namespace em si é criada pelo Terraform (`03-cloudflare-token.tf`), não
+  pelo Flux — ela precisa existir antes do secret do token ser criado nela,
+  e não faz sentido a namespace ter dois donos (Terraform e Flux) disputando
+  o mesmo objeto.
+- **`apps/`** — reservado para as aplicações da oneshift. Vazio por
+  enquanto (só um `kustomization.yaml` sem `resources`), populado quando
+  essas apps começarem a ser deployadas via GitOps.
 
 Sem SOPS por enquanto — ainda não existe segredo de aplicação para
 gerenciar; entra quando for necessário (YAGNI).
@@ -129,13 +148,15 @@ Solução: **external-dns** rodando no cluster (deployado via FluxCD), que cria
 e atualiza os registros DNS automaticamente a partir das anotações dos
 Ingress/Services.
 
-- `03-cloudflare-token.tf` cria só um `cloudflare_api_token`, com permissão
-  restrita de editar DNS na zona, e injeta o valor direto como
-  `kubernetes_secret` no cluster (via provider `kubernetes` do Terraform,
-  configurado com o endpoint do OKE criado em `02-oke.tf`) — mesmo root
-  module, sem cruzar states.
-- O FluxCD (`fluxcd/apps/base`) deployará o `external-dns`, que consome esse
-  secret, e o `ingress-nginx`.
+- `03-cloudflare-token.tf` cria a namespace `shared-services`
+  (`kubernetes_namespace`) e um `cloudflare_api_token`, com permissão
+  restrita de editar DNS na zona, injetando o valor direto como
+  `kubernetes_secret` dentro dessa namespace (via provider `kubernetes` do
+  Terraform, configurado com o endpoint do OKE criado em `02-oke.tf`) —
+  mesmo root module, sem cruzar states.
+- O FluxCD (`fluxcd/shared-services/`) deployará o `external-dns` (namespace
+  `shared-services`), que consome esse secret, e o `ingress-nginx` (mesmo
+  namespace).
 - **Zona Cloudflare assumida como já existente** (domínio já apontado pra
   lá), referenciada via `data "cloudflare_zone"` — o Terraform não cria a
   zona.
