@@ -31,10 +31,9 @@ jobs:
           terraform_version: "1.5.7"
 
       - name: Install OCI CLI
-        run: |
-          curl -L -O https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
-          bash install.sh --accept-all-defaults
-          echo "$HOME/bin" >> "$GITHUB_PATH"
+        uses: oracle-actions/run-oci-cli-command@368cc7991534d1b8074846d10e1d84ac4c0d1a28 # v1.3.2
+        with:
+          command: "iam region list"
 
       - name: Terraform init
         env:
