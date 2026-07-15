@@ -7,57 +7,41 @@ Design completo: `docs/superpowers/specs/2026-07-14-oke-oci-iac-design.md`.
 
 ## Estrutura
 
-- `terraform/` — compartment, cluster OKE (módulo oficial
+- `terraform/` — cluster OKE (módulo oficial
   `oracle-terraform-modules/oke/oci`), token da Cloudflare e bootstrap do
-  FluxCD.
+  FluxCD, dentro do compartment `oneshift` (criado manualmente, ver
+  `backend.md`). Também cria os secrets `sops-age` e `flux-git-auth` no
+  cluster, via provider `kubernetes`.
 - `fluxcd/` — manifests reconciliados pelo Flux: `shared-services/`
-  (ingress-nginx, external-dns) e `apps/` (reservado pras apps da oneshift).
-- `.github/workflows/` — pipeline de apply (`infra.yml`) e destroy manual
-  (`infra-destroy.yml`).
+  (ingress-nginx, external-dns, cada um com um único `values-fluxcd.yaml`
+  multi-doc) e `apps/` (reservado pras apps da oneshift).
+- `.github/workflows/` — pipeline de apply (`infra-apply.yml`) e destroy
+  manual (`infra-destroy.yml`).
 
 ## Bootstrap manual (uma vez só)
 
 Estes passos não são automatizados de propósito — são problemas reais de
 ovo-e-galinha (a infra que os gerenciaria ainda não existe).
 
-### 1. Bucket de state (OCI Object Storage)
+### 1. Compartment + bucket de state
 
-```bash
-oci os bucket create \
-  --compartment-id <ocid-do-compartment-raiz-ou-tenancy> \
-  --name oneshift-tfstate-prd \
-  --region sa-saopaulo-1
-```
-
-Crie uma **Customer Secret Key** pro usuário que vai rodar o Terraform
-(Console OCI → Identity → Users → seu usuário → Customer Secret Keys), copie
-`backend.hcl.example` para `backend.hcl` (gitignored) e preencha com os
-valores reais. Use localmente com:
-
-```bash
-cd terraform
-terraform init -backend-config=../backend.hcl
-```
-
-No pipeline, os mesmos valores vêm dos secrets `TF_STATE_BUCKET`,
-`TF_STATE_S3_ENDPOINT`, `TF_STATE_ACCESS_KEY`, `TF_STATE_SECRET_KEY`.
+Ver `backend.md` pro passo a passo completo (comandos `oci` CLI pro
+compartment `oneshift` e o bucket `oneshift-tfstate-prd`, Customer Secret
+Key e como ligar tudo em `backend.hcl`/GitHub Secrets).
 
 ### 2. Chave age para o SOPS
 
 Já gerada em `age.key` (local, gitignored) durante a implementação inicial —
-guarde o conteúdo em um gerenciador de senhas. Depois que o cluster existir
-(primeiro `terraform apply` real), carregue-a como o secret que o Flux usa
-pra decriptar:
-
-```bash
-kubectl create secret generic sops-age \
-  --namespace flux-system \
-  --from-file=age.agekey=age.key
-```
+guarde o conteúdo em um gerenciador de senhas. A chave pública vai em
+`.sops.yaml` (na raiz do repo, inalterado). O conteúdo da chave **privada**
+vai no secret `SOPS_AGE_PRIVATE_KEY` do GitHub — o Terraform cria o secret
+`sops-age` no cluster automaticamente em todo `apply` (via provider
+`kubernetes`, ver `04-cluster-secrets.tf`), não precisa mais de
+`kubectl create secret` manual.
 
 Se perder `age.key`, gere um novo par com `age-keygen -o age.key`, atualize
 a chave pública em `.sops.yaml`, re-criptografe os secrets existentes em
-`fluxcd/` e recrie o secret `sops-age` no cluster.
+`fluxcd/` e atualize o valor do secret `SOPS_AGE_PRIVATE_KEY` no GitHub.
 
 ### 3. Token de API de conta da Cloudflare
 
@@ -72,20 +56,12 @@ O repositório `Oneshift-Organization/ost-iac.terraform` é **privado**, então 
 `GitRepository` do Flux precisa de credenciais pra clonar. Gere um GitHub
 Personal Access Token (fine-grained, permissão de leitura em "Contents" só
 pra este repositório; um PAT clássico com escopo `repo` também funciona se o
-fine-grained não estiver disponível). Depois que o cluster existir, crie o
-secret que o `flux2-sync` referencia (`gitRepository.spec.secretRef.name =
-flux-git-auth`):
-
-```bash
-kubectl create secret generic flux-git-auth \
-  --namespace flux-system \
-  --from-literal=username=<qualquer-valor-ex-git> \
-  --from-literal=password=<o-token-gerado>
-```
-
-Mesma categoria de bootstrap manual do secret `sops-age`: ambos vivem em
-`flux-system` e são pré-requisitos pra o `GitRepository`/`Kustomization`
-funcionarem.
+fine-grained não estiver disponível). O usuário e o token vão nos secrets
+`FLUX_GIT_USERNAME`/`FLUX_GIT_TOKEN` do GitHub — o Terraform cria o secret
+`flux-git-auth` no cluster automaticamente em todo `apply`, mesmo mecanismo
+do `sops-age` acima. Isso importa porque o cluster é destruído e recriado
+repetidamente pelos pipelines, não só uma vez — um passo manual por cluster
+não seria sustentável.
 
 ## GitHub Secrets necessários
 
@@ -103,6 +79,10 @@ funcionarem.
 | `TF_STATE_S3_ENDPOINT` | Endpoint S3-compatible do Object Storage |
 | `TF_STATE_ACCESS_KEY` | Customer Secret Key — access key |
 | `TF_STATE_SECRET_KEY` | Customer Secret Key — secret key |
+| `OCI_COMPARTMENT_ID` | OCID do compartment `oneshift` (ver `backend.md`) |
+| `SOPS_AGE_PRIVATE_KEY` | Conteúdo da chave privada age (bootstrap manual acima) |
+| `FLUX_GIT_USERNAME` | Usuário pro git auth do Flux (ex: `git`) |
+| `FLUX_GIT_TOKEN` | PAT do GitHub pro Flux clonar o repo privado |
 
 ## Rodando localmente
 
@@ -113,13 +93,21 @@ terraform init -backend-config=../backend.hcl
 terraform plan
 ```
 
+`terraform.tfvars.example` cresceu com os últimos ajustes (compartment e os
+dois secrets declarativos) — mesma mecânica, só mais variáveis pra
+preencher.
+
 ## Pipelines
 
-- **`infra.yml`** — push na `main` que toque `terraform/**` dispara plan +
-  apply automático, e re-criptografa `fluxcd/shared-services/external-dns/secret.sops.yaml`
-  se o token da Cloudflare mudou.
+- **`infra-apply.yml`** — push na `main` que toque `terraform/**` dispara
+  plan + apply automático, e re-criptografa
+  `fluxcd/shared-services/external-dns/secret.sops.yaml` se o token da
+  Cloudflare mudou. Autentica a OCI CLI via variáveis de ambiente nativas
+  (`OCI_CLI_USER`, `OCI_CLI_TENANCY` etc.), sem escrever `~/.oci/config`.
 - **`infra-destroy.yml`** — manual (`workflow_dispatch`), exige digitar
   `oneshift` para confirmar. Limpa os Ingress e o Service do ingress-nginx
   do cluster antes do destroy (dá tempo do external-dns remover os
   registros DNS e da OCI desprovisionar o Load Balancer associado ao
-  Service, que não é gerenciado pelo Terraform).
+  Service, que não é gerenciado pelo Terraform). Usa a action oficial
+  `oracle-actions/configure-kubectl-oke` pra configurar o `kubectl`, em vez
+  de rodar `oci ce cluster create-kubeconfig` manualmente.

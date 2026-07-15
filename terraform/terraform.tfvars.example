@@ -11,3 +11,12 @@ home_region = "us-ashburn-1"
 
 cloudflare_account_api_token = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 cloudflare_zone_id           = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+compartment_id = "ocid1.compartment.oc1..aaaaaaaaexample"
+
+sops_age_private_key = <<EOT
+AGE-SECRET-KEY-1XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+EOT
+
+flux_git_username = "git"
+flux_git_token     = "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
