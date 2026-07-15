@@ -20,41 +20,50 @@ Ambiente único neste momento: **prd** (produção). Projeto: **oneshift**.
 
 ```
 terraform/                 # root único: compartment + rede + OKE + token
-                            # da Cloudflare + secret no cluster + bootstrap
-                            # do FluxCD
-  00-provider.tf
+                            # da Cloudflare + bootstrap do FluxCD
+  00-provider.tf            # oci + helm + cloudflare (sem provider kubernetes)
   01-compartment.tf
   02-oke.tf
-  03-cloudflare-token.tf
+  03-cloudflare-token.tf     # só o recurso cloud (cloudflare_api_token)
   04-fluxcd.tf
 fluxcd/
-  kustomization.yaml       # raiz: agrega shared-services/ e apps/
-  shared-services/          # infra compartilhada do cluster (namespace shared-services)
+  kustomization.yaml        # raiz: agrega shared-services/ e apps/
+  shared-services/           # infra compartilhada do cluster (namespace shared-services)
     kustomization.yaml
-    ingress-nginx.yaml      # HelmRelease
-    external-dns.yaml       # HelmRelease
-  apps/                      # apps da oneshift (vazio por enquanto, populado depois)
+    namespace.yaml            # namespace shared-services, compartilhada pelos serviços abaixo
+    ingress-nginx/
+      kustomization.yaml
+      helmrelease.yaml
+    external-dns/
+      kustomization.yaml
+      helmrelease.yaml
+      secret.sops.yaml       # token da Cloudflare, criptografado via SOPS
+  apps/                       # apps da oneshift (vazio por enquanto, populado depois)
     kustomization.yaml
+.sops.yaml                   # regra de criptografia (chave age pública)
 .github/
   workflows/
-    infra.yml              # plan + apply automático em push na main
-    infra-destroy.yml      # destroy manual, com confirmação
-README.md                  # inclui o passo manual de bootstrap do bucket de state
+    infra.yml               # plan + apply automático em push na main
+    infra-destroy.yml       # destroy manual, com confirmação
+README.md                   # bootstrap manual: bucket de state + chave age (secret sops-age)
 ```
 
-Root único de Terraform, não dois separados por provider: o token da
-Cloudflare precisa virar um `kubernetes_secret` dentro do cluster OKE, então
-manter `oci` e `cloudflare` em states separados forçaria usar
-`terraform_remote_state` só pra cruzar essa referência — complexidade
-desnecessária para um único recurso. Com um root só, os providers `oci`,
-`cloudflare`, `kubernetes` e `helm` convivem no mesmo `00-provider.tf` e o
-dado flui direto, sem cruzar states.
+Root único de Terraform (não dois separados por provider) pela mesma razão
+de antes: menos complexidade de referência cruzada entre `oci` e
+`cloudflare`. Mas agora o Terraform **não** toca em objetos do cluster —
+`03-cloudflare-token.tf` cria só o recurso `cloudflare_api_token` (nível de
+conta Cloudflare), e a entrega do valor pro cluster é feita via GitOps +
+SOPS, não via provider `kubernetes`. Isso elimina esse provider do
+Terraform: o `helm_release` do Flux já carrega sua própria config de conexão
+com o cluster, embutida no recurso.
 
 Não há overlays por cloud (só existe OCI) — este repositório cobre
 infraestrutura, o bootstrap do GitOps e os manifests que o Flux reconcilia
-no cluster (`fluxcd/`). O path `fluxcd/apps/` é o destino das aplicações da
-oneshift; por enquanto fica vazio (só o `kustomization.yaml`), e passa a ser
-populado quando o deploy dessas apps via GitOps começar.
+no cluster (`fluxcd/`). Cada serviço em `shared-services/` tem sua própria
+pasta, autocontida (kustomization + manifests + secrets daquele serviço). O
+path `fluxcd/apps/` é o destino das aplicações da oneshift; por enquanto
+fica vazio (só o `kustomization.yaml`), e passa a ser populado quando o
+deploy dessas apps via GitOps começar.
 
 ## Nomenclatura
 
@@ -125,18 +134,28 @@ Mesmo padrão do repositório de referência: em `04-fluxcd.tf`,
 
 Dentro de `fluxcd/`, um `kustomization.yaml` raiz agrega dois paths por
 `resources:`:
-- **`shared-services/`** — infraestrutura compartilhada do cluster:
-  `ingress-nginx` e `external-dns`, ambos no namespace `shared-services`.
-  A namespace em si é criada pelo Terraform (`03-cloudflare-token.tf`), não
-  pelo Flux — ela precisa existir antes do secret do token ser criado nela,
-  e não faz sentido a namespace ter dois donos (Terraform e Flux) disputando
-  o mesmo objeto.
+- **`shared-services/`** — infraestrutura compartilhada do cluster, tudo no
+  namespace `shared-services` (criado pelo `namespace.yaml` na raiz dessa
+  pasta, compartilhado pelos serviços abaixo dela). Cada serviço tem sua
+  própria subpasta autocontida: `ingress-nginx/` (kustomization +
+  HelmRelease) e `external-dns/` (kustomization + HelmRelease + o secret
+  SOPS do token da Cloudflare).
 - **`apps/`** — reservado para as aplicações da oneshift. Vazio por
   enquanto (só um `kustomization.yaml` sem `resources`), populado quando
   essas apps começarem a ser deployadas via GitOps.
 
-Sem SOPS por enquanto — ainda não existe segredo de aplicação para
-gerenciar; entra quando for necessário (YAGNI).
+**SOPS entra desde já** (não é YAGNI — já existe um segredo real pra
+gerenciar, o token do external-dns): a `flux2-sync` é configurada com
+`kustomization.spec.decryption.provider = sops` e
+`secretRef.name = sops-age`, igual ao repositório de referência.
+
+O par de chaves **age** usado pelo SOPS é gerado e o secret `sops-age` é
+criado **manualmente, uma única vez** (`age-keygen` + `kubectl create secret
+generic sops-age --from-file=... -n flux-system`), documentado no README —
+mesmo padrão de bootstrap manual do bucket de state: evita o
+ovo-e-galinha de gerenciar via Terraform/Flux a própria chave que eles
+precisam pra decriptar segredos. A chave pública fica em `.sops.yaml` na
+raiz do repo.
 
 ## DNS (Cloudflare) + external-dns
 
@@ -148,15 +167,17 @@ Solução: **external-dns** rodando no cluster (deployado via FluxCD), que cria
 e atualiza os registros DNS automaticamente a partir das anotações dos
 Ingress/Services.
 
-- `03-cloudflare-token.tf` cria a namespace `shared-services`
-  (`kubernetes_namespace`) e um `cloudflare_api_token`, com permissão
-  restrita de editar DNS na zona, injetando o valor direto como
-  `kubernetes_secret` dentro dessa namespace (via provider `kubernetes` do
-  Terraform, configurado com o endpoint do OKE criado em `02-oke.tf`) —
-  mesmo root module, sem cruzar states.
-- O FluxCD (`fluxcd/shared-services/`) deployará o `external-dns` (namespace
-  `shared-services`), que consome esse secret, e o `ingress-nginx` (mesmo
-  namespace).
+- `03-cloudflare-token.tf` cria só o `cloudflare_api_token`, com permissão
+  restrita de editar DNS na zona — um recurso de conta Cloudflare, nada de
+  objeto do cluster. Terraform não precisa mais do provider `kubernetes`.
+- O valor do token é criptografado com SOPS (manualmente, a partir do
+  `terraform output`, ou na rotação do token) e commitado em
+  `fluxcd/shared-services/external-dns/secret.sops.yaml`. O Flux decripta
+  esse arquivo (chave `sops-age`, ver seção de FluxCD bootstrap) e aplica o
+  secret no cluster antes de instalar o `external-dns`.
+- O FluxCD (`fluxcd/shared-services/`) deployará o `external-dns`, que
+  consome esse secret, e o `ingress-nginx` — ambos no namespace
+  `shared-services`.
 - **Zona Cloudflare assumida como já existente** (domínio já apontado pra
   lá), referenciada via `data "cloudflare_zone"` — o Terraform não cria a
   zona.
@@ -190,9 +211,8 @@ compartment `oneshift` como confirmação):
 
 Adicionar apenas quando a necessidade aparecer de fato:
 - Múltiplos ambientes (dev/staging) — só prd por enquanto.
-- SOPS / secrets criptografados no git.
 - Bastion ou operator host.
 - Cluster autoscaler, observability stack (Prometheus/Grafana), service mesh.
 - Aprovação manual no apply (fluxo é auto-apply por decisão do usuário).
-- Apps de exemplo rodando no cluster — isso é responsabilidade de outro
-  repositório, este cobre só infra + bootstrap do GitOps.
+- Apps reais da oneshift rodando no cluster — o path `fluxcd/apps/` já
+  existe, mas fica vazio até o deploy delas via GitOps começar de fato.
