@@ -110,7 +110,8 @@ creation_rules:
 
 Run:
 ```bash
-cat > /tmp/sops-check.yaml <<'EOF'
+mkdir -p fluxcd
+cat > fluxcd/check.sops.yaml <<'EOF'
 apiVersion: v1
 kind: Secret
 metadata:
@@ -119,12 +120,12 @@ metadata:
 stringData:
   foo: bar
 EOF
-cd /home/luandi/projects/pessoal/oneshift/ost-iac.terraform
-mkdir -p fluxcd
-sops --encrypt /tmp/sops-check.yaml > fluxcd/check.sops.yaml
+sops --encrypt --in-place fluxcd/check.sops.yaml
 cat fluxcd/check.sops.yaml
 ```
 Expected: saída é um YAML válido, com `metadata.name: check` em texto plano e `stringData.foo` substituído por um valor `ENC[AES256_GCM,...]`, mais um bloco `sops:` no fim do arquivo com `age:` preenchido.
+
+Note: o `sops` casa as `creation_rules` de `.sops.yaml` pelo **caminho do arquivo de entrada**, não pelo caminho de saída de um redirect `>`. Por isso o arquivo tem que ser escrito direto no caminho final (que bate com o `path_regex: fluxcd/.*\.sops\.ya?ml$`) e criptografado `--in-place` — `sops --encrypt /tmp/algo.yaml > fluxcd/algo.sops.yaml` falha com "no matching creation rules found", porque o `/tmp/...` não bate com o regex.
 
 - [ ] **Step 4: Limpar o arquivo de teste e commitar só o necessário**
 
@@ -802,8 +803,7 @@ spec:
 
 Run:
 ```bash
-cd /home/luandi/projects/pessoal/oneshift/ost-iac.terraform
-cat > /tmp/cloudflare-secret.yaml <<'EOF'
+cat > fluxcd/shared-services/external-dns/secret.sops.yaml <<'EOF'
 apiVersion: v1
 kind: Secret
 metadata:
@@ -812,11 +812,12 @@ metadata:
 stringData:
   apiToken: changeme-placeholder-token
 EOF
-sops --encrypt /tmp/cloudflare-secret.yaml > fluxcd/shared-services/external-dns/secret.sops.yaml
-rm /tmp/cloudflare-secret.yaml
+sops --encrypt --in-place fluxcd/shared-services/external-dns/secret.sops.yaml
 cat fluxcd/shared-services/external-dns/secret.sops.yaml
 ```
 Expected: YAML com `metadata` em texto plano e `stringData.apiToken` criptografado (`ENC[AES256_GCM,...]`), mais o bloco `sops:` no final.
+
+Note: escreva o arquivo já no caminho final (que bate com o `path_regex` do `.sops.yaml`) e criptografe `--in-place` — `sops` casa as `creation_rules` pelo caminho de entrada, então `sops --encrypt /tmp/algo.yaml > caminho/final.sops.yaml` falha com "no matching creation rules found".
 
 - [ ] **Step 4: Criar fluxcd/shared-services/external-dns/kustomization.yaml**
 
@@ -991,7 +992,7 @@ jobs:
       - name: Encrypt cloudflare token for external-dns
         run: |
           TOKEN=$(terraform output -raw cloudflare_api_token)
-          cat > /tmp/cloudflare-secret.yaml <<EOF
+          cat > ../fluxcd/shared-services/external-dns/secret.sops.yaml <<EOF
           apiVersion: v1
           kind: Secret
           metadata:
@@ -1000,7 +1001,7 @@ jobs:
           stringData:
             apiToken: ${TOKEN}
           EOF
-          sops --encrypt /tmp/cloudflare-secret.yaml > ../fluxcd/shared-services/external-dns/secret.sops.yaml
+          sops --encrypt --in-place ../fluxcd/shared-services/external-dns/secret.sops.yaml
 
       - name: Commit updated secret if changed
         run: |
