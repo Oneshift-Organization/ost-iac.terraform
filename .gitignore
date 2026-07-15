@@ -1,0 +1,25 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*tfplan*
+.terraform.tfstate.lock.info
+.terraformrc
+terraform.rc
+backend.hcl
+!backend.hcl.example
+
+# SOPS / age
+age.key
+
+# OS
+.DS_Store
