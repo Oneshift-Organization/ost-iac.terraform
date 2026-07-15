@@ -1,0 +1,13 @@
+tenancy_ocid = "ocid1.tenancy.oc1..aaaaaaaaexample"
+user_ocid    = "ocid1.user.oc1..aaaaaaaaexample"
+fingerprint  = "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx"
+private_key  = <<EOT
+-----BEGIN PRIVATE KEY-----
+...
+-----END PRIVATE KEY-----
+EOT
+region      = "sa-saopaulo-1"
+home_region = "us-ashburn-1"
+
+cloudflare_account_api_token = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+cloudflare_zone_id           = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
