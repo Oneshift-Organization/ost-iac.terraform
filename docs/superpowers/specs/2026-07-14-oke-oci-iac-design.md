@@ -33,9 +33,11 @@ fluxcd/
     namespace.yaml            # namespace shared-services, compartilhada pelos serviços abaixo
     ingress-nginx/
       kustomization.yaml
+      helmrepository.yaml     # fonte do chart
       helmrelease.yaml
     external-dns/
       kustomization.yaml
+      helmrepository.yaml     # fonte do chart
       helmrelease.yaml
       secret.sops.yaml       # token da Cloudflare, criptografado via SOPS
   apps/                       # apps da oneshift (vazio por enquanto, populado depois)
@@ -54,16 +56,23 @@ de antes: menos complexidade de referência cruzada entre `oci` e
 `03-cloudflare-token.tf` cria só o recurso `cloudflare_api_token` (nível de
 conta Cloudflare), e a entrega do valor pro cluster é feita via GitOps +
 SOPS, não via provider `kubernetes`. Isso elimina esse provider do
-Terraform: o `helm_release` do Flux já carrega sua própria config de conexão
-com o cluster, embutida no recurso.
+Terraform: o `helm_release` do Flux usa o **provider `helm`** configurado
+com um bloco `kubernetes { host = module.oke..., exec {...} }` (mesmo
+padrão do repositório de referência) — a conexão fica na config do
+provider, não precisa de um provider `kubernetes` à parte.
 
 Não há overlays por cloud (só existe OCI) — este repositório cobre
 infraestrutura, o bootstrap do GitOps e os manifests que o Flux reconcilia
 no cluster (`fluxcd/`). Cada serviço em `shared-services/` tem sua própria
-pasta, autocontida (kustomization + manifests + secrets daquele serviço). O
-path `fluxcd/apps/` é o destino das aplicações da oneshift; por enquanto
+pasta, autocontida (fonte do chart, HelmRelease e secrets daquele serviço).
+O path `fluxcd/apps/` é o destino das aplicações da oneshift; por enquanto
 fica vazio (só o `kustomization.yaml`), e passa a ser populado quando o
 deploy dessas apps via GitOps começar.
+
+Importante: mudanças dentro de `fluxcd/` **não passam pelo pipeline de
+Terraform** — o Flux fica de olho no repositório sozinho (polling) e
+reconcilia direto no cluster a cada push na `main`. Só mudanças em
+`terraform/` disparam `infra.yml`.
 
 ## Nomenclatura
 
@@ -76,6 +85,12 @@ aplica a ele.
 Exemplos de recursos dentro do compartment:
 - `oke-oneshift-prd` (cluster OKE)
 - `np-oneshift-prd` (node pool)
+
+Esse padrão vale para recursos **OCI** dentro do compartment. Objetos
+Kubernetes (namespace `shared-services`, releases do Flux, etc.) seguem
+convenção própria do ecossistema k8s/Flux, não esse padrão — não faz
+sentido versionar `env` num namespace quando o cluster inteiro já é de um
+único ambiente (`prd`).
 
 ## Compartment & IAM
 
@@ -132,14 +147,19 @@ Mesmo padrão do repositório de referência: em `04-fluxcd.tf`,
 (raiz) deste mesmo repositório (branch `main`) — um único Flux
 `Kustomization` reconciliando a raiz, sem múltiplos CRs pra gerenciar.
 
+A autenticação do provider `helm` com o cluster usa `oci ce cluster
+generate-token` no bloco `exec` (equivalente ao `aws eks get-token` do
+repositório de referência) — exige a **OCI CLI instalada no runner** do
+pipeline, além do provider `oci` já configurado.
+
 Dentro de `fluxcd/`, um `kustomization.yaml` raiz agrega dois paths por
 `resources:`:
 - **`shared-services/`** — infraestrutura compartilhada do cluster, tudo no
   namespace `shared-services` (criado pelo `namespace.yaml` na raiz dessa
   pasta, compartilhado pelos serviços abaixo dela). Cada serviço tem sua
-  própria subpasta autocontida: `ingress-nginx/` (kustomization +
-  HelmRelease) e `external-dns/` (kustomization + HelmRelease + o secret
-  SOPS do token da Cloudflare).
+  própria subpasta autocontida (fonte do chart + HelmRelease):
+  `ingress-nginx/` e `external-dns/` (que também leva o secret SOPS do
+  token da Cloudflare).
 - **`apps/`** — reservado para as aplicações da oneshift. Vazio por
   enquanto (só um `kustomization.yaml` sem `resources`), populado quando
   essas apps começarem a ser deployadas via GitOps.
@@ -189,6 +209,11 @@ Ingress/Service correspondente é deletado — mas num `terraform destroy`
 direto, o cluster (e o pod do external-dns) some junto com tudo, sem chance
 de fazer essa limpeza sozinho. Por isso o pipeline de destroy tem um passo
 extra explícito antes do `terraform destroy` (ver seção de pipelines).
+
+Efeito colateral aceito: depois de um `terraform destroy`, o token dentro de
+`secret.sops.yaml` fica órfão (aponta pra um `cloudflare_api_token` que não
+existe mais). Não quebra nada — só é irrelevante até a infra subir de novo,
+quando o secret é re-criptografado com o token novo.
 
 ## Pipelines (GitHub Actions)
 
