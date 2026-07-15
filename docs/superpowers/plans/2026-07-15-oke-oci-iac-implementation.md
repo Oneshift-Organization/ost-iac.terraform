@@ -519,34 +519,34 @@ resource "helm_release" "flux_sync" {
   version    = "~> 1.15"
   namespace  = "flux-system"
 
-  set {
-    name  = "gitRepository.spec.url"
-    value = "https://github.com/Oneshift-Organization/ost-iac.terraform"
-  }
-
-  set {
-    name  = "gitRepository.spec.ref.branch"
-    value = "main"
-  }
-
-  set {
-    name  = "kustomization.spec.path"
-    value = "./fluxcd"
-  }
-
-  set {
-    name  = "kustomization.spec.decryption.provider"
-    value = "sops"
-  }
-
-  set {
-    name  = "kustomization.spec.decryption.secretRef.name"
-    value = "sops-age"
-  }
+  set = [
+    {
+      name  = "gitRepository.spec.url"
+      value = "https://github.com/Oneshift-Organization/ost-iac.terraform"
+    },
+    {
+      name  = "gitRepository.spec.ref.branch"
+      value = "main"
+    },
+    {
+      name  = "kustomization.spec.path"
+      value = "./fluxcd"
+    },
+    {
+      name  = "kustomization.spec.decryption.provider"
+      value = "sops"
+    },
+    {
+      name  = "kustomization.spec.decryption.secretRef.name"
+      value = "sops-age"
+    },
+  ]
 
   depends_on = [helm_release.flux]
 }
 ```
+
+Note: `set` no `helm_release` é uma **lista de objetos** (`set = [{...}, ...]`) no provider `hashicorp/helm` v3, não blocos repetidos `set {}` (isso mudou do v2 pro v3 — confirmado rodando `terraform validate` contra o provider v3.2.0 real).
 
 - [ ] **Step 3: Validar**
 
