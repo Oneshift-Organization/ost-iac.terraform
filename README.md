@@ -46,9 +46,13 @@ a chave pública em `.sops.yaml`, re-criptografe os secrets existentes em
 ### 3. Token de API de conta da Cloudflare
 
 Criado manualmente no dashboard da Cloudflare (Profile → API Tokens),
-permissão mínima de **"Account API Tokens" → Edit** (é o token usado pelo
-Terraform pra criar o token específico do external-dns, escopado só a DNS).
-Guarde o valor no secret `CLOUDFLARE_ACCOUNT_API_TOKEN` do GitHub.
+permissão de usuário **"API Tokens" → Edit** (não é a "Account API Tokens" —
+essa é escopada à conta e não autoriza consultar `permission_groups_list`
+nem criar tokens via API, dá 403; a de usuário é a exigida pelo provider
+pros recursos `cloudflare_api_token`/`cloudflare_api_token_permission_groups_list`).
+É o token usado pelo Terraform pra criar o token específico do external-dns,
+escopado só a DNS. Guarde o valor no secret `CLOUDFLARE_ACCOUNT_API_TOKEN` do
+GitHub.
 
 ### 4. Credencial de git para o Flux (repositório privado)
 

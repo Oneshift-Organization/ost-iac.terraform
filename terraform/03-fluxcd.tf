@@ -2,7 +2,7 @@ resource "helm_release" "flux" {
   name             = "flux2"
   repository       = "https://fluxcd-community.github.io/helm-charts"
   chart            = "flux2"
-  version          = "~> 2.19"
+  version          = "2.19.0"
   namespace        = "flux-system"
   create_namespace = true
 }
@@ -11,7 +11,7 @@ resource "helm_release" "flux_sync" {
   name       = "flux2-sync"
   repository = "https://fluxcd-community.github.io/helm-charts"
   chart      = "flux2-sync"
-  version    = "~> 1.15"
+  version    = "1.15.0"
   namespace  = "flux-system"
 
   set = [
