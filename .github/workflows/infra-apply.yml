@@ -82,8 +82,18 @@ jobs:
         run: terraform apply -auto-approve tfplan
 
       - name: Encrypt cloudflare token for external-dns
+        id: token
         run: |
           TOKEN=$(terraform output -raw cloudflare_api_token)
+          HASH_FILE=../fluxcd/shared-services/external-dns/cloudflare_api_token.sha256
+          NEW_HASH=$(printf '%s' "$TOKEN" | sha256sum | cut -d' ' -f1)
+          OLD_HASH=$(cat "$HASH_FILE" 2>/dev/null || echo "")
+          if [ "$NEW_HASH" = "$OLD_HASH" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "$NEW_HASH" > "$HASH_FILE"
           cat > ../fluxcd/shared-services/external-dns/secret.sops.yaml <<EOF
           apiVersion: v1
           kind: Secret
@@ -96,10 +106,11 @@ jobs:
           sops --encrypt --in-place ../fluxcd/shared-services/external-dns/secret.sops.yaml
 
       - name: Commit updated secret if changed
+        if: steps.token.outputs.changed == 'true'
         run: |
           cd ..
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add fluxcd/shared-services/external-dns/secret.sops.yaml
-          git diff --cached --quiet || git commit -m "chore: rotate cloudflare token for external-dns"
-          git diff --cached --quiet || git push
+          git add fluxcd/shared-services/external-dns/secret.sops.yaml fluxcd/shared-services/external-dns/cloudflare_api_token.sha256
+          git commit -m "chore: rotate cloudflare token for external-dns"
+          git push
