@@ -1,4 +1,4 @@
-name: infra
+name: infra-apply
 
 on:
   push:
@@ -18,6 +18,12 @@ jobs:
     defaults:
       run:
         working-directory: terraform
+    env:
+      OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+      OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
+      OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
     steps:
       - uses: actions/checkout@v4
 
@@ -32,26 +38,6 @@ jobs:
           echo "$HOME/bin" >> "$GITHUB_PATH"
           curl -Lo /usr/local/bin/sops https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.amd64
           sudo chmod +x /usr/local/bin/sops
-
-      - name: Configure OCI CLI credentials
-        env:
-          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
-          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_REGION: ${{ secrets.OCI_REGION }}
-          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
-        run: |
-          mkdir -p ~/.oci
-          cat > ~/.oci/config <<EOF
-          [DEFAULT]
-          user=$OCI_USER_OCID
-          fingerprint=$OCI_FINGERPRINT
-          tenancy=$OCI_TENANCY_OCID
-          region=$OCI_REGION
-          key_file=/home/runner/.oci/oci_api_key.pem
-          EOF
-          printf '%s' "$OCI_PRIVATE_KEY" > ~/.oci/oci_api_key.pem
-          chmod 600 ~/.oci/config ~/.oci/oci_api_key.pem
 
       - name: Terraform init
         env:
@@ -83,8 +69,12 @@ jobs:
           TF_VAR_private_key: ${{ secrets.OCI_PRIVATE_KEY }}
           TF_VAR_region: ${{ secrets.OCI_REGION }}
           TF_VAR_home_region: ${{ secrets.OCI_HOME_REGION }}
+          TF_VAR_compartment_id: ${{ secrets.OCI_COMPARTMENT_ID }}
           TF_VAR_cloudflare_account_api_token: ${{ secrets.CLOUDFLARE_ACCOUNT_API_TOKEN }}
           TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          TF_VAR_sops_age_private_key: ${{ secrets.SOPS_AGE_PRIVATE_KEY }}
+          TF_VAR_flux_git_username: ${{ secrets.FLUX_GIT_USERNAME }}
+          TF_VAR_flux_git_token: ${{ secrets.FLUX_GIT_TOKEN }}
 
       - name: Terraform apply
         run: terraform apply -auto-approve tfplan

@@ -17,6 +17,12 @@ jobs:
     defaults:
       run:
         working-directory: terraform
+    env:
+      OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+      OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
+      OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
     steps:
       - uses: actions/checkout@v4
 
@@ -29,26 +35,6 @@ jobs:
           curl -L -O https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
           bash install.sh --accept-all-defaults
           echo "$HOME/bin" >> "$GITHUB_PATH"
-
-      - name: Configure OCI CLI credentials
-        env:
-          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
-          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_REGION: ${{ secrets.OCI_REGION }}
-          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
-        run: |
-          mkdir -p ~/.oci
-          cat > ~/.oci/config <<EOF
-          [DEFAULT]
-          user=$OCI_USER_OCID
-          fingerprint=$OCI_FINGERPRINT
-          tenancy=$OCI_TENANCY_OCID
-          region=$OCI_REGION
-          key_file=/home/runner/.oci/oci_api_key.pem
-          EOF
-          printf '%s' "$OCI_PRIVATE_KEY" > ~/.oci/oci_api_key.pem
-          chmod 600 ~/.oci/config ~/.oci/oci_api_key.pem
 
       - name: Terraform init
         env:
@@ -63,8 +49,12 @@ jobs:
           TF_VAR_private_key: ${{ secrets.OCI_PRIVATE_KEY }}
           TF_VAR_region: ${{ secrets.OCI_REGION }}
           TF_VAR_home_region: ${{ secrets.OCI_HOME_REGION }}
+          TF_VAR_compartment_id: ${{ secrets.OCI_COMPARTMENT_ID }}
           TF_VAR_cloudflare_account_api_token: ${{ secrets.CLOUDFLARE_ACCOUNT_API_TOKEN }}
           TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          TF_VAR_sops_age_private_key: ${{ secrets.SOPS_AGE_PRIVATE_KEY }}
+          TF_VAR_flux_git_username: ${{ secrets.FLUX_GIT_USERNAME }}
+          TF_VAR_flux_git_token: ${{ secrets.FLUX_GIT_TOKEN }}
         run: |
           terraform init \
             -backend-config="bucket=$TF_STATE_BUCKET" \
@@ -79,24 +69,30 @@ jobs:
             -backend-config="skip_s3_checksum=true" \
             -backend-config="use_path_style=true"
 
-      - name: Delete ingress resources (let external-dns clean up DNS)
+      - name: Get cluster ID
+        id: cluster
         env:
-          OCI_REGION: ${{ secrets.OCI_REGION }}
           TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
           TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
           TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
           TF_VAR_private_key: ${{ secrets.OCI_PRIVATE_KEY }}
           TF_VAR_region: ${{ secrets.OCI_REGION }}
           TF_VAR_home_region: ${{ secrets.OCI_HOME_REGION }}
+          TF_VAR_compartment_id: ${{ secrets.OCI_COMPARTMENT_ID }}
           TF_VAR_cloudflare_account_api_token: ${{ secrets.CLOUDFLARE_ACCOUNT_API_TOKEN }}
           TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          TF_VAR_sops_age_private_key: ${{ secrets.SOPS_AGE_PRIVATE_KEY }}
+          TF_VAR_flux_git_username: ${{ secrets.FLUX_GIT_USERNAME }}
+          TF_VAR_flux_git_token: ${{ secrets.FLUX_GIT_TOKEN }}
+        run: echo "id=$(terraform output -raw cluster_id)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure kubectl for OKE
+        uses: oracle-actions/configure-kubectl-oke@77a733d79446dabe7bf0e58eb56197d33ce4dc58 # v1.5.0
+        with:
+          cluster: ${{ steps.cluster.outputs.id }}
+
+      - name: Delete ingress resources (let external-dns clean up DNS)
         run: |
-          CLUSTER_ID=$(terraform output -raw cluster_id)
-          oci ce cluster create-kubeconfig \
-            --cluster-id "$CLUSTER_ID" \
-            --file "$HOME/.kube/config" \
-            --region "$OCI_REGION" \
-            --token-version 2.0.0
           kubectl delete ingress --all -A --ignore-not-found
           kubectl delete svc -n shared-services -l app.kubernetes.io/instance=ingress-nginx --ignore-not-found
           sleep 60
@@ -110,5 +106,9 @@ jobs:
           TF_VAR_private_key: ${{ secrets.OCI_PRIVATE_KEY }}
           TF_VAR_region: ${{ secrets.OCI_REGION }}
           TF_VAR_home_region: ${{ secrets.OCI_HOME_REGION }}
+          TF_VAR_compartment_id: ${{ secrets.OCI_COMPARTMENT_ID }}
           TF_VAR_cloudflare_account_api_token: ${{ secrets.CLOUDFLARE_ACCOUNT_API_TOKEN }}
           TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          TF_VAR_sops_age_private_key: ${{ secrets.SOPS_AGE_PRIVATE_KEY }}
+          TF_VAR_flux_git_username: ${{ secrets.FLUX_GIT_USERNAME }}
+          TF_VAR_flux_git_token: ${{ secrets.FLUX_GIT_TOKEN }}
