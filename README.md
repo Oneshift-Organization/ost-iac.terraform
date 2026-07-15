@@ -71,7 +71,7 @@ não seria sustentável.
 | `OCI_USER_OCID` | OCID do usuário de API key |
 | `OCI_FINGERPRINT` | Fingerprint da chave de API |
 | `OCI_PRIVATE_KEY` | Conteúdo da chave privada PEM |
-| `OCI_REGION` | Região da OCI (ex: `sa-saopaulo-1`) |
+| `OCI_REGION` | Região da OCI (ex: `us-ashburn-1`) |
 | `OCI_HOME_REGION` | Home region da tenancy |
 | `CLOUDFLARE_ACCOUNT_API_TOKEN` | Token de conta Cloudflare (bootstrap manual acima) |
 | `CLOUDFLARE_ZONE_ID` | Zone ID do domínio da oneshift |

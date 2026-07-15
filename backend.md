@@ -23,7 +23,7 @@ Guarde o OCID retornado — é o `compartment_id` usado pelo Terraform (ver
 oci os bucket create \
   --compartment-id <ocid-do-compartment-oneshift> \
   --name oneshift-tfstate-prd \
-  --region sa-saopaulo-1
+  --region us-ashburn-1
 ```
 
 ## 3. Customer Secret Key (auth S3-compatible)

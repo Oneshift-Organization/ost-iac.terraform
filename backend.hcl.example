@@ -1,9 +1,9 @@
 bucket = "oneshift-tfstate-prd"
 key    = "oneshift-prd/terraform.tfstate"
-region = "sa-saopaulo-1"
+region = "us-ashburn-1"
 
 endpoints = {
-  s3 = "https://<object-storage-namespace>.compat.objectstorage.sa-saopaulo-1.oraclecloud.com"
+  s3 = "https://<object-storage-namespace>.compat.objectstorage.us-ashburn-1.oraclecloud.com"
 }
 
 access_key = "<customer-secret-key-access-key>"

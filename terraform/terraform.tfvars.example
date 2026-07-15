@@ -6,7 +6,7 @@ private_key  = <<EOT
 ...
 -----END PRIVATE KEY-----
 EOT
-region      = "sa-saopaulo-1"
+region      = "us-ashburn-1"
 home_region = "us-ashburn-1"
 
 cloudflare_account_api_token = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"

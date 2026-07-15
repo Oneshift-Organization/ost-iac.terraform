@@ -178,7 +178,7 @@ variable "private_key" {
 variable "region" {
   description = "Região da OCI onde os recursos são criados"
   type        = string
-  default     = "sa-saopaulo-1"
+  default     = "us-ashburn-1"
 }
 
 variable "home_region" {
@@ -257,7 +257,7 @@ private_key  = <<EOT
 ...
 -----END PRIVATE KEY-----
 EOT
-region      = "sa-saopaulo-1"
+region      = "us-ashburn-1"
 home_region = "us-ashburn-1"
 
 cloudflare_account_api_token = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
@@ -1198,10 +1198,10 @@ git commit -m "ci: add manual destroy pipeline with confirmation and dns cleanup
 ```hcl
 bucket = "oneshift-tfstate-prd"
 key    = "oneshift-prd/terraform.tfstate"
-region = "sa-saopaulo-1"
+region = "us-ashburn-1"
 
 endpoints = {
-  s3 = "https://<object-storage-namespace>.compat.objectstorage.sa-saopaulo-1.oraclecloud.com"
+  s3 = "https://<object-storage-namespace>.compat.objectstorage.us-ashburn-1.oraclecloud.com"
 }
 
 access_key = "<customer-secret-key-access-key>"
@@ -1245,7 +1245,7 @@ ovo-e-galinha (a infra que os gerenciaria ainda não existe).
 oci os bucket create \
   --compartment-id <ocid-do-compartment-raiz-ou-tenancy> \
   --name oneshift-tfstate-prd \
-  --region sa-saopaulo-1
+  --region us-ashburn-1
 ```
 
 Crie uma **Customer Secret Key** pro usuário que vai rodar o Terraform
@@ -1314,7 +1314,7 @@ funcionarem.
 | `OCI_USER_OCID` | OCID do usuário de API key |
 | `OCI_FINGERPRINT` | Fingerprint da chave de API |
 | `OCI_PRIVATE_KEY` | Conteúdo da chave privada PEM |
-| `OCI_REGION` | Região da OCI (ex: `sa-saopaulo-1`) |
+| `OCI_REGION` | Região da OCI (ex: `us-ashburn-1`) |
 | `OCI_HOME_REGION` | Home region da tenancy |
 | `CLOUDFLARE_ACCOUNT_API_TOKEN` | Token de conta Cloudflare (bootstrap manual acima) |
 | `CLOUDFLARE_ZONE_ID` | Zone ID do domínio da oneshift |

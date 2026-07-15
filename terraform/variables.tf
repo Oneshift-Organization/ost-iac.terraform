@@ -22,7 +22,7 @@ variable "private_key" {
 variable "region" {
   description = "Região da OCI onde os recursos são criados"
   type        = string
-  default     = "sa-saopaulo-1"
+  default     = "us-ashburn-1"
 }
 
 variable "home_region" {
