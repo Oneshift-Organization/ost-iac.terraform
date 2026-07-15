@@ -8,7 +8,7 @@ module "oke" {
   }
 
   tenancy_id     = var.tenancy_ocid
-  compartment_id = oci_identity_compartment.oneshift.id
+  compartment_id = var.compartment_id
   region         = var.region
   home_region    = var.home_region
 

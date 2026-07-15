@@ -41,5 +41,9 @@ resource "helm_release" "flux_sync" {
     },
   ]
 
-  depends_on = [helm_release.flux]
+  depends_on = [
+    helm_release.flux,
+    kubernetes_secret_v1.sops_age,
+    kubernetes_secret_v1.flux_git_auth,
+  ]
 }

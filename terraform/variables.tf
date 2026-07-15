@@ -40,3 +40,26 @@ variable "cloudflare_zone_id" {
   description = "Zone ID do domínio da oneshift já configurado na Cloudflare"
   type        = string
 }
+
+variable "compartment_id" {
+  description = "OCID do compartment oneshift (criado manualmente — ver backend.md)"
+  type        = string
+}
+
+variable "sops_age_private_key" {
+  description = "Conteúdo da chave privada age usada pelo SOPS (gerada uma vez via age-keygen, ver README)"
+  type        = string
+  sensitive   = true
+}
+
+variable "flux_git_username" {
+  description = "Usuário para autenticação HTTPS do Flux no repositório git privado (qualquer valor não-vazio, ex: git)"
+  type        = string
+  sensitive   = true
+}
+
+variable "flux_git_token" {
+  description = "Personal Access Token do GitHub usado pelo Flux para clonar o repositório privado"
+  type        = string
+  sensitive   = true
+}
