@@ -51,7 +51,7 @@ provider "cloudflare" {
 # see infra-apply.yml's cluster-first apply step.
 provider "helm" {
   kubernetes = {
-    host                   = module.oke.cluster_endpoints.public_endpoint
+    host                   = "https://${module.oke.cluster_endpoints.public_endpoint}"
     cluster_ca_certificate = base64decode(module.oke.cluster_ca_cert)
 
     exec = {
@@ -67,7 +67,7 @@ provider "helm" {
 }
 
 provider "kubernetes" {
-  host                   = module.oke.cluster_endpoints.public_endpoint
+  host                   = "https://${module.oke.cluster_endpoints.public_endpoint}"
   cluster_ca_certificate = base64decode(module.oke.cluster_ca_cert)
 
   exec {
