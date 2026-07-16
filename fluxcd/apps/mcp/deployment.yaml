@@ -17,7 +17,7 @@ spec:
         - name: ghcr-credentials
       containers:
         - name: mcp
-          image: ghcr.io/oneshift-organization/ost-mcp.nodejs/ost-mcp:main-0-000000000000 # {"$imagepolicy": "flux-system:mcp"}
+          image: ghcr.io/oneshift-organization/ost-mcp.nodejs/ost-mcp:main-1784169748-a17f9a90df56 # {"$imagepolicy": "flux-system:mcp"}
           ports:
             - containerPort: 8080
           env:
