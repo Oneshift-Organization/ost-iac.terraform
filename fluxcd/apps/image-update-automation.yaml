@@ -1,0 +1,25 @@
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageUpdateAutomation
+metadata:
+  name: apps
+  namespace: flux-system
+spec:
+  interval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: flux2-sync
+  git:
+    checkout:
+      ref:
+        branch: main
+    commit:
+      author:
+        email: fluxcdbot@users.noreply.github.com
+        name: fluxcdbot
+      messageTemplate: |
+        chore(gitops): bump image {{range .Updated.Images}}{{println .}}{{end}}
+    push:
+      branch: main
+  update:
+    path: ./fluxcd/apps
+    strategy: Setters
