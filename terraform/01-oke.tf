@@ -17,6 +17,7 @@ module "oke" {
 
   control_plane_is_public           = true
   assign_public_ip_to_control_plane = true
+  control_plane_allowed_cidrs       = ["0.0.0.0/0"]
 
   create_bastion  = false
   create_operator = false
