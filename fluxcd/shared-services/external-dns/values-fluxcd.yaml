@@ -27,6 +27,8 @@ spec:
     provider:
       name: cloudflare
     policy: sync
+    extraArgs:
+      cloudflare-proxied: "true"
     env:
       - name: CF_API_TOKEN
         valueFrom:
