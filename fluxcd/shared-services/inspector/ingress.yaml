@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: inspector
+  namespace: shared-services
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: inspector.oneshift.com.br
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: inspector
+                port:
+                  number: 6274
+    - host: inspector-proxy.oneshift.com.br
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: inspector
+                port:
+                  number: 6277

@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inspector
+  namespace: shared-services
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inspector
+  template:
+    metadata:
+      labels:
+        app: inspector
+    spec:
+      containers:
+        - name: inspector
+          image: ghcr.io/modelcontextprotocol/inspector:0.22.0
+          ports:
+            - containerPort: 6274
+              name: client-ui
+            - containerPort: 6277
+              name: proxy
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: MCP_AUTO_OPEN_ENABLED
+              value: "false"
+            - name: ALLOWED_ORIGINS
+              value: "https://inspector.oneshift.com.br"
+            - name: MCP_PROXY_FULL_ADDRESS
+              value: "https://inspector-proxy.oneshift.com.br"
+          envFrom:
+            - secretRef:
+                name: inspector-secret
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
