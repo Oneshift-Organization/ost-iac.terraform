@@ -1,9 +1,5 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespace.yaml
-  - ghcr-credentials.sops.yaml
-  - ghcr-credentials-flux-system.sops.yaml
   - api
   - mcp
-  - image-update-automation.yaml
