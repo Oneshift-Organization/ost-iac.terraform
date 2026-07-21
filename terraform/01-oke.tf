@@ -24,7 +24,7 @@ module "oke" {
 
   worker_pools = {
     "np-oneshift-prd" = {
-      size   = 0
+      size   = 1
       shape  = "VM.Standard.E5.Flex"
       ocpus  = 2
       memory = 12
