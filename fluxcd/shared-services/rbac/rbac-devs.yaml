@@ -1,0 +1,41 @@
+---
+# Leitura de recursos de escopo global (nodes, namespaces). Sem isso o
+# `kubectl get nodes` do time falha mesmo com o RoleBinding do namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: oneshift-devs-view
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "namespaces"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oneshift-devs-view
+subjects: []
+  # Um bloco por dev, com o OCID vindo do output `dev_user_ocids`:
+  # - kind: User
+  #   name: ocid1.user.oc1..aaaa...
+  #   apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: oneshift-devs-view
+  apiGroup: rbac.authorization.k8s.io
+---
+# `edit` cobre o dia a dia (rollout, logs, exec, port-forward) mas não
+# permite criar RoleBinding — ninguém escala o próprio acesso.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: oneshift-devs
+  namespace: apps
+subjects: []
+  # - kind: User
+  #   name: ocid1.user.oc1..aaaa...
+  #   apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: edit
+  apiGroup: rbac.authorization.k8s.io
