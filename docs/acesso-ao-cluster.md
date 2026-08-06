@@ -158,11 +158,14 @@ kubectl -n apps port-forward svc/api 8000:80  # acessar local
 kubectl get nodes                             # ver os nós
 ```
 
+No `shared-services` você alcança **apenas o Postgres** — ver a seção do banco abaixo.
+
 **Não pode** — e isso é intencional, não é bug:
 
 - Ler `secrets` do `flux-system` (onde ficam as credenciais de infra)
 - Criar `RoleBinding` ou alterar permissões
 - Mexer em `kube-system` ou apagar namespaces
+- Abrir túnel para outros pods do `shared-services`, como o ingress-nginx
 
 Se precisar de algo dessa lista, fale com o Luiz em vez de contornar.
 
@@ -171,6 +174,67 @@ Se precisar de algo dessa lista, fale com o Luiz em vez de contornar.
 Este é o ambiente de **produção**. `rollout restart` derruba o pod e sobe outro — o serviço fica alguns segundos fora. E não adianta editar um deployment com `kubectl edit`: o cluster é gerenciado por GitOps (FluxCD), e qualquer alteração manual é **revertida em até 5 minutos** para o que está no repositório.
 
 Para mudar algo de verdade, abra PR em `ost-iac.terraform` alterando os manifestos em `fluxcd/apps/`.
+
+---
+
+## Acessando o banco de dados
+
+O Postgres roda dentro do cluster e **não é exposto para a internet**. Você chega nele abrindo um túnel com `port-forward`.
+
+### 1. Pegar a senha
+
+```bash
+kubectl -n shared-services get secret postgres-secret \
+  -o jsonpath='{.data.password}' | base64 -d; echo
+```
+
+### 2. Abrir o túnel
+
+```bash
+kubectl -n shared-services port-forward pod/postgres-0 5432:5432
+```
+
+Deixe esse terminal aberto — o túnel só existe enquanto o comando roda.
+
+### 3. Conectar
+
+Em outro terminal:
+
+```bash
+psql -h localhost -p 5432 -U ostadmin -d ost
+```
+
+| Campo | Valor |
+|---|---|
+| Host | `localhost` |
+| Porta | `5432` |
+| Banco | `ost` |
+| Usuário | `ostadmin` |
+| Senha | a do passo 1 |
+
+Serve igual para DBeaver, TablePlus, pgAdmin ou o cliente que você preferir — basta apontar para `localhost:5432` com o túnel aberto.
+
+Se a porta 5432 já estiver ocupada na sua máquina (Postgres local, por exemplo), use outra: `port-forward pod/postgres-0 55432:5432` e conecte na `55432`.
+
+### Antes de rodar qualquer coisa
+
+Este é o **banco de produção**, com os dados reais de billing. Não existe réplica nem ambiente de staging, e o acesso é de administrador — dá para alterar e apagar qualquer tabela.
+
+Duas precauções que valem o hábito:
+
+- Rode `SELECT` antes do `UPDATE`/`DELETE` correspondente, para conferir quais linhas serão afetadas
+- Use transação explícita no que for destrutivo, para poder voltar atrás:
+
+```sql
+BEGIN;
+DELETE FROM tabela WHERE condicao;
+-- confira o resultado; se estiver errado:
+ROLLBACK;
+-- se estiver certo:
+COMMIT;
+```
+
+A credencial é a mesma que a aplicação usa, então o banco não registra quem fez o quê. Na dúvida sobre um comando destrutivo, pergunte antes.
 
 ---
 
