@@ -1,0 +1,53 @@
+---
+# Acesso do time ao Postgres. O banco nao e exposto por ingress — a
+# conexao e sempre por `kubectl port-forward`, que exige tres coisas:
+# resolver o Service, listar o pod por tras dele e abrir o tunel.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: oneshift-devs-db
+  namespace: shared-services
+rules:
+  - apiGroups: [""]
+    resources: ["services", "pods"]
+    verbs: ["get", "list"]
+
+  # `resourceNames` prende o tunel ao postgres-0 e so a ele. O nome e
+  # estavel porque e StatefulSet — sem isso o time abriria tunel para
+  # qualquer pod do namespace, incluindo ingress-nginx e external-dns.
+  - apiGroups: [""]
+    resources: ["pods/portforward"]
+    verbs: ["create"]
+    resourceNames: ["postgres-0"]
+
+  # Credencial do banco. E a mesma que a aplicacao usa (ostadmin), entao
+  # o acesso e total por decisao explicita. `resourceNames` impede que a
+  # regra alcance os demais secrets do namespace, como o token da
+  # Cloudflare e o do inspector.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+    resourceNames: ["postgres-secret"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: oneshift-devs-db
+  namespace: shared-services
+subjects:
+  - kind: User # anderson_huang — rm565920@fiap.com.br
+    name: ocid1.user.oc1..aaaaaaaaprpb74vxj6f2dcuvqnb4fnntdu7le2lo7c5yickscofd5v5w3cha
+    apiGroup: rbac.authorization.k8s.io
+  - kind: User # bruno_henrique — rm566277@fiap.com.br
+    name: ocid1.user.oc1..aaaaaaaaz3xded56p4tygzsaap3yk5lseymofm5o5tbzmqbxc75q2agc2eaq
+    apiGroup: rbac.authorization.k8s.io
+  - kind: User # ronaldo_attamah — rm564630@fiap.com.br
+    name: ocid1.user.oc1..aaaaaaaax3d7auhg35imvmrf4uqdnosjlviililexwwy4njall4r6flgnena
+    apiGroup: rbac.authorization.k8s.io
+  - kind: User # guylherme_miguel — rm562374@fiap.com.br
+    name: ocid1.user.oc1..aaaaaaaaaem3kpxrbtirrkhmugwjcmab4hxgk5rpzgiywlyyjgpjtphxembq
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: oneshift-devs-db
+  apiGroup: rbac.authorization.k8s.io
