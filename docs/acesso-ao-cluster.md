@@ -181,9 +181,15 @@ Mesmo cluster, mesma forma de acesso (`kubectl -n develop get pods` etc.),
 mesmas regras de GitOps — editar com `kubectl edit` também é revertido em
 até 5 minutos, porque é o mesmo FluxCD cuidando dos dois namespaces.
 
-A diferença é o dado: `develop` usa a database `ost_dev`, vazia, sem nada de
-produção. Pode testar, quebrar, e reiniciar sem o cuidado extra da seção
-acima.
+A diferença é o banco: `develop` usa a database `ost_dev`, vazia, sem nada de
+produção. Mas o `api-secret` do `develop` reaproveita, de propósito, as
+credenciais de produção — `SUPABASE_URL`, `SUPABASE_ANON_KEY`,
+`SUPABASE_SERVICE_ROLE_KEY` (essa passa por cima do RLS do Supabase: dá
+leitura e escrita total nos dados de auth/usuário de produção),
+`ANTHROPIC_API_KEY` e `CLOUD_CREDS_FERNET_KEY`. Ou seja: só o banco é
+isolado. Qualquer coisa que fale com o Supabase ou gaste tokens de LLM
+ainda está mexendo em produção de verdade, então o cuidado da seção acima
+continua valendo pra isso.
 
 ---
 

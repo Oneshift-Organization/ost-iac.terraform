@@ -44,7 +44,8 @@ Design completo: `docs/superpowers/specs/2026-07-14-oke-oci-iac-design.md`.
 | Diretório | Descrição |
 |---|---|
 | `fluxcd/shared-services/` | ingress-nginx, external-dns, Postgres interno (bitnami), inspector — cada um com um `values-fluxcd.yaml` multi-doc |
-| `fluxcd/apps/` | Apps da oneshift reconciliadas pelo Flux: `api` e `mcp` |
+| `fluxcd/production/` | Apps da oneshift em produção, reconciliadas pelo Flux: `api` e `mcp` |
+| `fluxcd/develop/` | Mesmas apps (`api`, `mcp`) num ambiente `develop` separado, banco `ost_dev` |
 
 ### Pipelines (GitHub Actions)
 
@@ -71,7 +72,8 @@ ost-iac.terraform/
 ├── terraform/                   # Cluster OKE, token Cloudflare, bootstrap FluxCD, secrets do cluster
 ├── fluxcd/                      # Manifests reconciliados pelo Flux
 │   ├── shared-services/         # ingress-nginx, external-dns, postgres, inspector, flux-system
-│   └── apps/                    # api, mcp
+│   ├── production/              # api, mcp
+│   └── develop/                 # api, mcp (ambiente de dev, banco ost_dev)
 ├── .github/workflows/           # infra-apply.yml, infra-destroy.yml
 ├── docs/                        # Specs, plans e diagrama de arquitetura
 ├── backend.hcl.example          # Template do backend remoto (state)
@@ -91,14 +93,14 @@ ost-iac.terraform/
 6. FluxCD clona o repositório (autenticado via `flux-git-auth`) e decripta os
    manifests com SOPS/age.
 7. FluxCD reconcilia `shared-services` (ingress-nginx, external-dns,
-   Postgres, inspector) e `apps` (api, mcp).
+   Postgres, inspector), `production` (api, mcp) e `develop` (api, mcp).
 8. `external-dns` sincroniza os registros DNS na Cloudflare pros hosts
    expostos pelo ingress-nginx.
 
 ## Como validar a entrega
 
 - `terraform plan` sem diffs logo após um apply limpo;
-- pods dos namespaces `shared-services` e `apps` em `Running`;
+- pods dos namespaces `shared-services`, `production` e `develop` em `Running`;
 - `kubectl get ingress` mostrando os hosts `api.`, `mcp.`, `inspector.` e
   `inspector-proxy.oneshift.com.br`;
 - registros DNS criados na Cloudflare pelo external-dns (proxied);
