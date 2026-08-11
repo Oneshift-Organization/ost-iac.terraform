@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - values-fluxcd.yaml
   - secret.sops.yaml
+  - secret-dev.sops.yaml
