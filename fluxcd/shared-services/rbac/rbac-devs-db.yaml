@@ -27,7 +27,7 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get"]
-    resourceNames: ["postgres-secret"]
+    resourceNames: ["postgres-secret", "postgres-dev-secret"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
