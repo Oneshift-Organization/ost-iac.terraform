@@ -39,7 +39,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: oneshift-devs
-  namespace: apps
+  namespace: production
 subjects:
   - kind: User # anderson_huang — rm565920@fiap.com.br
     name: ocid1.user.oc1..aaaaaaaaprpb74vxj6f2dcuvqnb4fnntdu7le2lo7c5yickscofd5v5w3cha
