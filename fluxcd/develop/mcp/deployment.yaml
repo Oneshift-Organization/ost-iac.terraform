@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: mcp
-  namespace: apps
+  namespace: develop
 spec:
   replicas: 1
   selector:
@@ -17,7 +17,7 @@ spec:
         - name: ghcr-credentials
       containers:
         - name: mcp
-          image: ghcr.io/oneshift-organization/ost-mcp.nodejs/ost-mcp:main-1784686726-171191702442 # {"$imagepolicy": "flux-system:mcp"}
+          image: ghcr.io/oneshift-organization/ost-mcp.nodejs/ost-mcp:main-1784686726-171191702442 # {"$imagepolicy": "flux-system:mcp-dev"}
           ports:
             - containerPort: 8080
           env:
