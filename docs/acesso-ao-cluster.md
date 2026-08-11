@@ -135,7 +135,7 @@ kubectl auth whoami
 Deve mostrar seu OCID em `Username`. Este é o comando que resolve quase todo problema de permissão — ele mostra exatamente qual identidade o cluster está enxergando.
 
 ```bash
-kubectl -n apps get pods
+kubectl -n production get pods
 kubectl get nodes
 ```
 
@@ -145,17 +145,17 @@ Se os dois responderem, está tudo pronto.
 
 ## O que você pode fazer
 
-Seu acesso é de **desenvolvedor no namespace `apps`**, onde rodam a API e o MCP.
+Seu acesso é de **desenvolvedor no namespace `production`**, onde rodam a API e o MCP.
 
 **Pode:**
 
 ```bash
-kubectl -n apps get pods                      # listar
-kubectl -n apps logs -f deploy/api            # acompanhar logs
-kubectl -n apps describe pod <nome>           # investigar
-kubectl -n apps rollout restart deploy/api    # reiniciar
-kubectl -n apps port-forward svc/api 8000:80  # acessar local
-kubectl get nodes                             # ver os nós
+kubectl -n production get pods                      # listar
+kubectl -n production logs -f deploy/api            # acompanhar logs
+kubectl -n production describe pod <nome>           # investigar
+kubectl -n production rollout restart deploy/api    # reiniciar
+kubectl -n production port-forward svc/api 8000:80  # acessar local
+kubectl get nodes                                   # ver os nós
 ```
 
 No `shared-services` você alcança **apenas o Postgres** — ver a seção do banco abaixo.
@@ -169,11 +169,21 @@ No `shared-services` você alcança **apenas o Postgres** — ver a seção do b
 
 Se precisar de algo dessa lista, fale com o Luiz em vez de contornar.
 
-### Um aviso sobre o namespace `apps`
+### Um aviso sobre o namespace `production`
 
-Este é o ambiente de **produção**. `rollout restart` derruba o pod e sobe outro — o serviço fica alguns segundos fora. E não adianta editar um deployment com `kubectl edit`: o cluster é gerenciado por GitOps (FluxCD), e qualquer alteração manual é **revertida em até 5 minutos** para o que está no repositório.
+Este é o ambiente de **produção** — o nome do namespace já deixa isso claro. `rollout restart` derruba o pod e sobe outro — o serviço fica alguns segundos fora. E não adianta editar um deployment com `kubectl edit`: o cluster é gerenciado por GitOps (FluxCD), e qualquer alteração manual é **revertida em até 5 minutos** para o que está no repositório.
 
-Para mudar algo de verdade, abra PR em `ost-iac.terraform` alterando os manifestos em `fluxcd/apps/`.
+Para mudar algo de verdade, abra PR em `ost-iac.terraform` alterando os manifestos em `fluxcd/production/`.
+
+### E o namespace `develop`?
+
+Mesmo cluster, mesma forma de acesso (`kubectl -n develop get pods` etc.),
+mesmas regras de GitOps — editar com `kubectl edit` também é revertido em
+até 5 minutos, porque é o mesmo FluxCD cuidando dos dois namespaces.
+
+A diferença é o dado: `develop` usa a database `ost_dev`, vazia, sem nada de
+produção. Pode testar, quebrar, e reiniciar sem o cuidado extra da seção
+acima.
 
 ---
 
@@ -202,6 +212,15 @@ Em outro terminal:
 
 ```bash
 psql -h localhost -p 5432 -U ostadmin -d ost
+```
+
+Pra conectar em `ost_dev` em vez de `ost` (mesmo túnel, mesma instância):
+
+```bash
+kubectl -n shared-services get secret postgres-dev-secret \
+  -o jsonpath='{.data.password}' | base64 -d; echo
+
+psql -h localhost -p 5432 -U ostadmin_dev -d ost_dev
 ```
 
 | Campo | Valor |
@@ -257,7 +276,7 @@ O token não foi gerado. Quase sempre é o OCI CLI fora do `PATH` — o `kubectl
 
 A primeira porta abriu, a segunda não. Rode `kubectl auth whoami` e compare o OCID com o da tabela acima. Se bater, avise o Luiz — pode ser que seu OCID ainda não esteja no RoleBinding.
 
-Lembre que `Forbidden` também aparece quando você tenta algo fora do seu escopo, como `kubectl get pods -n flux-system`. Confira se você usou `-n apps`.
+Lembre que `Forbidden` também aparece quando você tenta algo fora do seu escopo, como `kubectl get pods -n flux-system`. Confira se você usou `-n production` (ou `-n develop`).
 
 ### `Unable to connect to the server: dial tcp ... i/o timeout`
 
