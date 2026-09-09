@@ -17,7 +17,7 @@ spec:
         - name: ghcr-credentials
       containers:
         - name: api
-          image: ghcr.io/oneshift-organization/ost-backend.python/ost-api:develop-1788915066-46ce7cd05ef6 # {"$imagepolicy": "flux-system:api-dev"}
+          image: ghcr.io/oneshift-organization/ost-backend.python/ost-api:develop-1788928106-1a6c1b386b03 # {"$imagepolicy": "flux-system:api-dev"}
           ports:
             - containerPort: 8000
           envFrom:
