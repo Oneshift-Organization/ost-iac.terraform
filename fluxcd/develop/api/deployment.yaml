@@ -23,6 +23,8 @@ spec:
           envFrom:
             - secretRef:
                 name: api-secret
+            - secretRef:
+                name: api-nvidia-fallback-secret
           readinessProbe:
             httpGet:
               path: /v1/health
