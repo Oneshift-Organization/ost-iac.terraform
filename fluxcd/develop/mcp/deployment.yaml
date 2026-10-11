@@ -23,6 +23,21 @@ spec:
           env:
             - name: PORT
               value: "8080"
+            - name: NODE_ENV
+              value: "production"
+            - name: OST_API_BASE_URL
+              value: "http://api.develop.svc.cluster.local:8000"
+            - name: CORS_ORIGINS
+              value: "https://dev.oneshift.com.br,https://inspector.oneshift.com.br"
+            - name: MCP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-secret
+                  key: MCP_TOKEN
+            # Keep empty until an operator authorizes disposable test reports.
+            # Never allow real reports before the backend snapshot contract.
+            - name: MCP_SUBMIT_TEST_REPORT_IDS
+              value: ""
           envFrom:
             - secretRef:
                 name: mcp-secret
