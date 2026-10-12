@@ -23,6 +23,8 @@ spec:
           env:
             - name: AGENT_FLOW_ENABLED
               value: "true"
+            - name: INVENTORY_ENABLED
+              value: "true"
           envFrom:
             - secretRef:
                 name: api-secret
