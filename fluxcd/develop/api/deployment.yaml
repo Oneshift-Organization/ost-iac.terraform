@@ -25,6 +25,8 @@ spec:
               value: "true"
             - name: INVENTORY_ENABLED
               value: "true"
+            - name: AGENT_SNAPSHOT_ENABLED
+              value: "true"
           envFrom:
             - secretRef:
                 name: api-secret
