@@ -32,6 +32,8 @@ spec:
                 name: api-secret
             - secretRef:
                 name: api-nvidia-fallback-secret
+            - secretRef:
+                name: api-gcp-billing-secret
           readinessProbe:
             httpGet:
               path: /v1/health

@@ -6,5 +6,6 @@ resources:
   - ingress.yaml
   - secret.sops.yaml
   - nvidia-fallback-secret.sops.yaml
+  - gcp-billing-secret.sops.yaml
   - image-repository.yaml
   - image-policy.yaml
