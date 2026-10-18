@@ -27,6 +27,9 @@ spec:
               value: "true"
             - name: AGENT_SNAPSHOT_ENABLED
               value: "true"
+            # Origens do front: app.oneshift.com.br entra antes da troca de domínio do front de dev
+            - name: CORS_ORIGINS
+              value: '["http://localhost:3000","https://dev.oneshift.com.br","https://app.oneshift.com.br","https://oneshift.com.br"]'
           envFrom:
             - secretRef:
                 name: api-secret
