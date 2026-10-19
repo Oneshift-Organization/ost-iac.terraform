@@ -34,8 +34,12 @@ spec:
                 secretKeyRef:
                   name: mcp-secret
                   key: MCP_TOKEN
-            # Keep empty until an operator authorizes disposable test reports.
-            # Never allow real reports before the backend snapshot contract.
+            # Snapshot isolates agent revisions from analyses shown in the UI.
+            - name: MCP_BILLING_CONTRACT
+              value: "snapshot"
+            # Both gates remain empty, overriding any values inherited from the Secret.
+            - name: MCP_SUBMIT_TEST_SNAPSHOT_IDS
+              value: ""
             - name: MCP_SUBMIT_TEST_REPORT_IDS
               value: ""
           envFrom:
