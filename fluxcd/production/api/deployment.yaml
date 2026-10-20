@@ -20,9 +20,16 @@ spec:
           image: ghcr.io/oneshift-organization/ost-backend.python/ost-api:main-1792458816-f0d0f74c8fdb # {"$imagepolicy": "flux-system:api"}
           ports:
             - containerPort: 8000
+          env:
+            - name: INVENTORY_ENABLED
+              value: "true"
+            - name: AGENT_SNAPSHOT_ENABLED
+              value: "true"
           envFrom:
             - secretRef:
                 name: api-secret
+            - secretRef:
+                name: api-gcp-billing-secret
           readinessProbe:
             httpGet:
               path: /v1/health
