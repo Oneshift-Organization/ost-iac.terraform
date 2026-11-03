@@ -68,6 +68,11 @@ jobs:
             -backend-config="skip_s3_checksum=true" \
             -backend-config="use_path_style=true"
 
+      # Recursos dentro do cluster morrem junto com ele; destruir via API corre
+      # contra a remoção das regras de NSG que liberam o acesso ao kube-apiserver.
+      - name: Drop in-cluster resources from state
+        run: terraform state list | grep -E '^(helm_release|kubernetes_)' | xargs -r terraform state rm
+
       - name: Get cluster ID
         id: cluster
         env:
@@ -91,6 +96,7 @@ jobs:
           cluster: ${{ steps.cluster.outputs.id }}
 
       - name: Delete ingress resources (let external-dns clean up DNS)
+        continue-on-error: true
         run: |
           kubectl delete ingress --all -A --ignore-not-found
           kubectl delete svc -n shared-services -l app.kubernetes.io/instance=ingress-nginx --ignore-not-found
